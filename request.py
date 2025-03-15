@@ -17,6 +17,7 @@ from .utils import (
     gemini2,
     BaseAPI,
     safe_get,
+    get_engine,
     get_model_dict,
 )
 
@@ -788,7 +789,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
             else:
                 payload[field] = value
 
-    if provider.get("tools") == False or "o1" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
+    if provider.get("tools") == False or "o1-mini" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
     if "models.inference.ai.azure.com" in url:
@@ -1482,3 +1483,15 @@ async def get_payload(request: RequestModel, engine, provider, api_key=None):
         return await get_embedding_payload(request, engine, provider, api_key)
     else:
         raise ValueError("Unknown payload")
+
+async def prepare_request_payload(provider, request_data):
+
+    model_dict = get_model_dict(provider)
+    request = RequestModel(**request_data)
+
+    original_model = model_dict[request.model]
+    engine, _ = get_engine(provider, endpoint=None, original_model=original_model)
+
+    url, headers, payload = await get_payload(request, engine, provider, api_key=provider['api'])
+
+    return url, headers, payload

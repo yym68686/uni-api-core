@@ -12,7 +12,6 @@ logger = logging.getLogger("uni-api-core")
 logging.getLogger("httpx").setLevel(logging.CRITICAL)
 logging.getLogger("watchfiles.main").setLevel(logging.CRITICAL)
 
-
 def get_model_dict(provider):
     model_dict = {}
     for model in provider['model']:
@@ -113,7 +112,6 @@ def get_engine(provider, endpoint=None, original_model=""):
         stream = False
 
     return engine, stream
-
 
 def safe_get(data, *keys, default=None):
     for key in keys:

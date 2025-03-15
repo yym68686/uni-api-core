@@ -1,12 +1,7 @@
 import json
 import asyncio
 
-from .models import RequestModel
-from .request import get_payload
-from .utils import (
-    get_engine,
-    get_model_dict,
-)
+from .request import prepare_request_payload
 
 """
 测试脚本: 用于测试core/request.py中的get_payload函数
@@ -20,18 +15,6 @@ from .utils import (
 
 python -m core.test_payload
 """
-
-async def prepare_request_payload(provider, request_data):
-
-    model_dict = get_model_dict(provider)
-    request = RequestModel(**request_data)
-
-    original_model = model_dict[request.model]
-    engine, _ = get_engine(provider, endpoint=None, original_model=original_model)
-
-    url, headers, payload = await get_payload(request, engine, provider, api_key=provider['api'])
-
-    return url, headers, payload
 
 async def test_payload():
     print("===== 开始测试 get_payload 函数 =====")
