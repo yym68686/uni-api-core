@@ -721,11 +721,8 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
     }
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
-    if provider.get("api"):
+    if api_key:
         headers['Authorization'] = f"Bearer {api_key}"
-
-    elif provider['provider'].startswith("sk-"):
-        headers['Authorization'] = f"Bearer {provider['provider']}"
 
     url = provider['base_url']
 
@@ -930,11 +927,8 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
     }
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
-    if provider.get("api"):
+    if api_key:
         headers['Authorization'] = f"Bearer {api_key}"
-
-    elif provider['provider'].startswith("sk-"):
-        headers['Authorization'] = f"Bearer {provider['provider']}"
 
     url = provider['base_url']
 
@@ -991,7 +985,7 @@ async def get_cohere_payload(request, engine, provider, api_key=None):
     }
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
-    if provider.get("api"):
+    if api_key:
         headers['Authorization'] = f"Bearer {api_key}"
 
     url = provider['base_url']
@@ -1059,7 +1053,7 @@ async def get_cloudflare_payload(request, engine, provider, api_key=None):
     }
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
-    if provider.get("api"):
+    if api_key:
         headers['Authorization'] = f"Bearer {api_key}"
 
     url = "https://api.cloudflare.com/client/v4/accounts/{cf_account_id}/ai/run/{cf_model_id}".format(cf_account_id=provider['cf_account_id'], cf_model_id=original_model)
@@ -1341,7 +1335,7 @@ async def get_dalle_payload(request, engine, provider, api_key=None):
     headers = {
         "Content-Type": "application/json",
     }
-    if provider.get("api"):
+    if api_key:
         headers['Authorization'] = f"Bearer {api_key}"
     url = provider['base_url']
     url = BaseAPI(url).image_url
@@ -1362,7 +1356,7 @@ async def get_whisper_payload(request, engine, provider, api_key=None):
     headers = {
         # "Content-Type": "multipart/form-data",
     }
-    if provider.get("api"):
+    if api_key:
         headers['Authorization'] = f"Bearer {api_key}"
     url = provider['base_url']
     url = BaseAPI(url).audio_transcriptions
@@ -1389,7 +1383,7 @@ async def get_moderation_payload(request, engine, provider, api_key=None):
     headers = {
         "Content-Type": "application/json",
     }
-    if provider.get("api"):
+    if api_key:
         headers['Authorization'] = f"Bearer {api_key}"
     url = provider['base_url']
     url = BaseAPI(url).moderations
@@ -1407,7 +1401,7 @@ async def get_embedding_payload(request, engine, provider, api_key=None):
     headers = {
         "Content-Type": "application/json",
     }
-    if provider.get("api"):
+    if api_key:
         headers['Authorization'] = f"Bearer {api_key}"
     url = provider['base_url']
     url = BaseAPI(url).embeddings
@@ -1431,7 +1425,7 @@ async def get_tts_payload(request, engine, provider, api_key=None):
     headers = {
         "Content-Type": "application/json",
     }
-    if provider.get("api"):
+    if api_key:
         headers['Authorization'] = f"Bearer {api_key}"
     url = provider['base_url']
     url = BaseAPI(url).audio_speech
