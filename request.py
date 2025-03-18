@@ -164,12 +164,13 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     url = provider['base_url']
     parsed_url = urllib.parse.urlparse(url)
     # print("parsed_url", parsed_url)
-    if parsed_url.path.endswith("/v1beta") or parsed_url.path.endswith("/v1"):
-        api_version = parsed_url.path.split('/')[-1]  # 获取 v1 或 v1beta
-    else:
+    if "/v1beta" in parsed_url.path:
         api_version = "v1beta"
+    else:
+        api_version = "v1"
+
     # https://generativelanguage.googleapis.com/v1beta/models/
-    url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}/models/{original_model}:{gemini_stream}?key={api_key}"
+    url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path.split('/models')[0].rstrip('/')}/models/{original_model}:{gemini_stream}?key={api_key}"
 
     messages = []
     systemInstruction = None
@@ -1458,6 +1459,7 @@ async def get_payload(request: RequestModel, engine, provider, api_key=None):
     elif engine == "claude":
         return await get_claude_payload(request, engine, provider, api_key)
     elif engine == "gpt":
+        provider['base_url'] = BaseAPI(provider['base_url']).chat_url
         return await get_gpt_payload(request, engine, provider, api_key)
     elif engine == "openrouter":
         return await get_openrouter_payload(request, engine, provider, api_key)
