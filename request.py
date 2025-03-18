@@ -284,6 +284,8 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
 
     for field, value in request.model_dump(exclude_unset=True).items():
         if field not in miss_fields and value is not None:
+            if field == "tools" and "gemini-2.0-flash-thinking" in original_model:
+                continue
             if field == "tools":
                 # 处理每个工具的 function 定义
                 processed_tools = []
