@@ -73,7 +73,7 @@ async def test_payload():
     }
 
     # 调用函数处理请求并获取结果
-    url, headers, payload = await prepare_request_payload(provider, request_data)
+    url, headers, payload, engine = await prepare_request_payload(provider, request_data)
 
     # 打印结果
     print("\nURL:")

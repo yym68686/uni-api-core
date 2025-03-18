@@ -1490,4 +1490,4 @@ async def prepare_request_payload(provider, request_data):
 
     url, headers, payload = await get_payload(request, engine, provider, api_key=provider['api'])
 
-    return url, headers, payload
+    return url, headers, payload, engine
