@@ -143,8 +143,8 @@ async def get_image_message(base64_image, engine = None):
         }
     raise ValueError("Unknown engine")
 
-async def get_text_message(role, message, engine = None):
-    if "gpt" == engine or "claude" == engine or "openrouter" == engine or "vertex-claude" == engine or "o1" == engine or "azure" == engine:
+async def get_text_message(message, engine = None):
+    if "gpt" == engine or "claude" == engine or "openrouter" == engine or "vertex-claude" == engine or "azure" == engine:
         return {"type": "text", "text": message}
     if "gemini" == engine or "vertex-gemini" == engine:
         return {"text": message}
@@ -182,7 +182,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             content = []
             for item in msg.content:
                 if item.type == "text":
-                    text_message = await get_text_message(msg.role, item.text, engine)
+                    text_message = await get_text_message(item.text, engine)
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
@@ -433,7 +433,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             content = []
             for item in msg.content:
                 if item.type == "text":
-                    text_message = await get_text_message(msg.role, item.text, engine)
+                    text_message = await get_text_message(item.text, engine)
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
@@ -593,7 +593,7 @@ async def get_vertex_claude_payload(request, engine, provider, api_key=None):
             content = []
             for item in msg.content:
                 if item.type == "text":
-                    text_message = await get_text_message(msg.role, item.text, engine)
+                    text_message = await get_text_message(item.text, engine)
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
@@ -734,7 +734,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
             content = []
             for item in msg.content:
                 if item.type == "text":
-                    text_message = await get_text_message(msg.role, item.text, engine)
+                    text_message = await get_text_message(item.text, engine)
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True) and "o1-mini" not in original_model:
                     image_message = await get_image_message(item.image_url.url, engine)
@@ -869,7 +869,7 @@ async def get_azure_payload(request, engine, provider, api_key=None):
             content = []
             for item in msg.content:
                 if item.type == "text":
-                    text_message = await get_text_message(msg.role, item.text, engine)
+                    text_message = await get_text_message(item.text, engine)
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True) and "o1-mini" not in original_model:
                     image_message = await get_image_message(item.image_url.url, engine)
@@ -939,7 +939,7 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
             content = []
             for item in msg.content:
                 if item.type == "text":
-                    text_message = await get_text_message(msg.role, item.text, engine)
+                    text_message = await get_text_message(item.text, engine)
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
@@ -1002,7 +1002,7 @@ async def get_cohere_payload(request, engine, provider, api_key=None):
             content = []
             for item in msg.content:
                 if item.type == "text":
-                    text_message = await get_text_message(msg.role, item.text, engine)
+                    text_message = await get_text_message(item.text, engine)
                     content.append(text_message)
         else:
             content = msg.content
@@ -1063,7 +1063,7 @@ async def get_cloudflare_payload(request, engine, provider, api_key=None):
     if isinstance(msg.content, list):
         for item in msg.content:
             if item.type == "text":
-                content = await get_text_message(msg.role, item.text, engine)
+                content = await get_text_message(item.text, engine)
     else:
         content = msg.content
 
@@ -1180,7 +1180,7 @@ async def get_claude_payload(request, engine, provider, api_key=None):
             content = []
             for item in msg.content:
                 if item.type == "text":
-                    text_message = await get_text_message(msg.role, item.text, engine)
+                    text_message = await get_text_message(item.text, engine)
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)

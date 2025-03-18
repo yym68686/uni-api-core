@@ -53,9 +53,9 @@ def get_engine(provider, endpoint=None, original_model=""):
     # print("parsed_url", parsed_url)
     engine = None
     stream = None
-    if parsed_url.path.endswith("/v1beta") or parsed_url.path.endswith("/v1"):
+    if parsed_url.path.endswith("/v1beta") or parsed_url.path.endswith("/v1") or parsed_url.netloc == 'generativelanguage.googleapis.com':
         engine = "gemini"
-    elif parsed_url.netloc == 'aiplatform.googleapis.com':
+    elif parsed_url.netloc.rstrip('/').endswith('aiplatform.googleapis.com'):
         engine = "vertex"
     elif parsed_url.netloc.rstrip('/').endswith('openai.azure.com') or parsed_url.netloc.rstrip('/').endswith('services.ai.azure.com'):
         engine = "azure"
