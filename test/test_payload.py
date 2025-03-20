@@ -1,7 +1,7 @@
 import json
 import asyncio
 
-from .request import prepare_request_payload
+from ..request import prepare_request_payload
 
 """
 测试脚本: 用于测试core/request.py中的get_payload函数
@@ -21,9 +21,9 @@ async def test_payload():
 
     # 步骤1: 配置provider
     provider = {
-        "provider": "new-i1-pe",
-        "base_url": "https://new.i1.pe/v1/chat/completions",
-        "api": "sk-ocNJRUaTROE43xRlHULvZy4PdY3T5GSEmAKvH6UPICBDvTpR",
+        "provider": "new",
+        "base_url": "/v1/chat/completions",
+        "api": "",
         "model": [
             "gpt-4"  # 使用支持工具功能的模型名称
         ],
