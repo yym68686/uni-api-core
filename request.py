@@ -1,11 +1,8 @@
-import os
 import re
-import io
 import json
 import httpx
 import base64
 import urllib.parse
-from PIL import Image
 
 from .models import RequestModel
 from .utils import (
@@ -19,140 +16,9 @@ from .utils import (
     safe_get,
     get_engine,
     get_model_dict,
+    get_text_message,
+    get_image_message,
 )
-
-def get_image_format(file_content):
-    try:
-        img = Image.open(io.BytesIO(file_content))
-        return img.format.lower()
-    except:
-        return None
-
-def encode_image(image_path):
-    with open(image_path, "rb") as image_file:
-        file_content = image_file.read()
-        img_format = get_image_format(file_content)
-        if not img_format:
-            raise ValueError("无法识别的图片格式")
-        base64_encoded = base64.b64encode(file_content).decode('utf-8')
-
-        if img_format == 'png':
-            return f"data:image/png;base64,{base64_encoded}"
-        elif img_format in ['jpg', 'jpeg']:
-            return f"data:image/jpeg;base64,{base64_encoded}"
-        else:
-            raise ValueError(f"不支持的图片格式: {img_format}")
-
-async def get_doc_from_url(url):
-    filename = urllib.parse.unquote(url.split("/")[-1])
-    transport = httpx.AsyncHTTPTransport(
-        http2=True,
-        verify=False,
-        retries=1
-    )
-    async with httpx.AsyncClient(transport=transport) as client:
-        try:
-            response = await client.get(
-                url,
-                timeout=30.0
-            )
-            with open(filename, 'wb') as f:
-                f.write(response.content)
-
-        except httpx.RequestError as e:
-            print(f"An error occurred while requesting {e.request.url!r}.")
-
-    return filename
-
-async def get_encode_image(image_url):
-    filename = await get_doc_from_url(image_url)
-    image_path = os.getcwd() + "/" + filename
-    base64_image = encode_image(image_path)
-    os.remove(image_path)
-    return base64_image
-
-# from PIL import Image
-# import io
-# def validate_image(image_data, image_type):
-#     try:
-#         decoded_image = base64.b64decode(image_data)
-#         image = Image.open(io.BytesIO(decoded_image))
-
-#         # 检查图片格式是否与声明的类型匹配
-#         # print("image.format", image.format)
-#         if image_type == "image/png" and image.format != "PNG":
-#             raise ValueError("Image is not a valid PNG")
-#         elif image_type == "image/jpeg" and image.format not in ["JPEG", "JPG"]:
-#             raise ValueError("Image is not a valid JPEG")
-
-#         # 如果没有异常,则图片有效
-#         return True
-#     except Exception as e:
-#         print(f"Image validation failed: {str(e)}")
-#         return False
-
-async def get_image_message(base64_image, engine = None):
-    if base64_image.startswith("http"):
-        base64_image = await get_encode_image(base64_image)
-    colon_index = base64_image.index(":")
-    semicolon_index = base64_image.index(";")
-    image_type = base64_image[colon_index + 1:semicolon_index]
-
-    if image_type == "image/webp":
-        # 将webp转换为png
-
-        # 解码base64获取图片数据
-        image_data = base64.b64decode(base64_image.split(",")[1])
-
-        # 使用PIL打开webp图片
-        image = Image.open(io.BytesIO(image_data))
-
-        # 转换为PNG格式
-        png_buffer = io.BytesIO()
-        image.save(png_buffer, format="PNG")
-        png_base64 = base64.b64encode(png_buffer.getvalue()).decode('utf-8')
-
-        # 返回PNG格式的base64
-        base64_image = f"data:image/png;base64,{png_base64}"
-        image_type = "image/png"
-
-    if "gpt" == engine or "openrouter" == engine or "azure" == engine:
-        return {
-            "type": "image_url",
-            "image_url": {
-                "url": base64_image,
-            }
-        }
-    if "claude" == engine or "vertex-claude" == engine:
-        # if not validate_image(base64_image.split(",")[1], image_type):
-        #     raise ValueError(f"Invalid image format. Expected {image_type}")
-        return {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": image_type,
-                "data": base64_image.split(",")[1],
-            }
-        }
-    if "gemini" == engine or "vertex-gemini" == engine:
-        return {
-            "inlineData": {
-                "mimeType": image_type,
-                "data": base64_image.split(",")[1],
-            }
-        }
-    raise ValueError("Unknown engine")
-
-async def get_text_message(message, engine = None):
-    if "gpt" == engine or "claude" == engine or "openrouter" == engine or "vertex-claude" == engine or "azure" == engine:
-        return {"type": "text", "text": message}
-    if "gemini" == engine or "vertex-gemini" == engine:
-        return {"text": message}
-    if engine == "cloudflare":
-        return message
-    if engine == "cohere":
-        return message
-    raise ValueError("Unknown engine")
 
 async def get_gemini_payload(request, engine, provider, api_key=None):
     headers = {
