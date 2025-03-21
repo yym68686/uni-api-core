@@ -50,6 +50,12 @@ class BaseAPI:
         self.embeddings: str = urlunparse(parsed_url[:2] + (before_v1 + "embeddings",) + ("",) * 3)
         self.audio_speech: str = urlunparse(parsed_url[:2] + (before_v1 + "audio/speech",) + ("",) * 3)
 
+        if parsed_url.hostname == "generativelanguage.googleapis.com":
+            self.base_url = api_url
+            self.v1_url = api_url
+            self.chat_url = api_url
+            self.embeddings = api_url
+
 def get_engine(provider, endpoint=None, original_model=""):
     parsed_url = urlparse(provider['base_url'])
     # print("parsed_url", parsed_url)
@@ -149,7 +155,6 @@ def update_initial_model(provider):
         if engine == "gemini":
             url = "https://generativelanguage.googleapis.com/v1beta/models"
             params = {"key": api}
-
             with httpx.Client(**client_config) as client:
                 response = client.get(url, params=params)
 
