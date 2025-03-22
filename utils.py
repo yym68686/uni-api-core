@@ -38,6 +38,8 @@ class BaseAPI:
             raise Exception("Error: API_URL is not set")
         if parsed_url.path != '/':
             before_v1 = parsed_url.path.split("chat/completions")[0]
+            if not before_v1.endswith("/"):
+                before_v1 = before_v1 + "/"
         else:
             before_v1 = ""
         self.base_url: str = urlunparse(parsed_url[:2] + ("",) + ("",) * 3)
