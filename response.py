@@ -156,8 +156,8 @@ async def fetch_gpt_response_stream(client, url, headers, payload):
                 # logger.info("line: %s", repr(line))
                 if line and line != "data: " and line != "data:" and not line.startswith(": ") and (result:=line.lstrip("data: ").strip()):
                     if result.strip() == "[DONE]":
-                        yield "data: [DONE]" + end_of_line
-                        return
+                        # yield "data: [DONE]" + end_of_line
+                        break
                     line = json.loads(result)
                     line['id'] = f"chatcmpl-{random_str}"
 
@@ -242,6 +242,7 @@ async def fetch_gpt_response_stream(client, url, headers, payload):
                         if no_stream_content:
                             del line["choices"][0]["message"]
                         yield "data: " + json.dumps(line).strip() + end_of_line
+        yield "data: [DONE]" + end_of_line
 
 async def fetch_azure_response_stream(client, url, headers, payload):
     timestamp = int(datetime.timestamp(datetime.now()))
@@ -264,8 +265,8 @@ async def fetch_azure_response_stream(client, url, headers, payload):
                 if line and line != "data: " and line != "data:" and not line.startswith(": "):
                     result = line.lstrip("data: ")
                     if result.strip() == "[DONE]":
-                        yield "data: [DONE]" + end_of_line
-                        return
+                        # yield "data: [DONE]" + end_of_line
+                        break
                     line = json.loads(result)
                     no_stream_content = safe_get(line, "choices", 0, "message", "content", default="")
                     content = safe_get(line, "choices", 0, "delta", "content", default="")
@@ -315,13 +316,14 @@ async def fetch_cloudflare_response_stream(client, url, headers, payload, model)
                 if line.startswith("data:"):
                     line = line.lstrip("data: ")
                     if line == "[DONE]":
-                        yield "data: [DONE]" + end_of_line
-                        return
+                        # yield "data: [DONE]" + end_of_line
+                        break
                     resp: dict = json.loads(line)
                     message = resp.get("response")
                     if message:
                         sse_string = await generate_sse_response(timestamp, model, content=message)
                         yield sse_string
+        yield "data: [DONE]" + end_of_line
 
 async def fetch_cohere_response_stream(client, url, headers, payload, model):
     timestamp = int(datetime.timestamp(datetime.now()))
@@ -339,12 +341,13 @@ async def fetch_cohere_response_stream(client, url, headers, payload, model):
                 # logger.info("line: %s", repr(line))
                 resp: dict = json.loads(line)
                 if resp.get("is_finished") == True:
-                    yield "data: [DONE]" + end_of_line
-                    return
+                    # yield "data: [DONE]" + end_of_line
+                    break
                 if resp.get("event_type") == "text-generation":
                     message = resp.get("text")
                     sse_string = await generate_sse_response(timestamp, model, content=message)
                     yield sse_string
+        yield "data: [DONE]" + end_of_line
 
 async def fetch_claude_response_stream(client, url, headers, payload, model):
     timestamp = int(datetime.timestamp(datetime.now()))
