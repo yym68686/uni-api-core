@@ -675,6 +675,11 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         if "temperature" in payload:
             payload.pop("temperature")
 
+    # 代码生成/数学解题  0.0
+    # 数据抽取/分析	     1.0
+    # 通用对话          1.3
+    # 翻译	           1.3
+    # 创意类写作/诗歌创作 1.5
     if "deepseek-r" in original_model.lower():
         if "temperature" not in payload:
             payload["temperature"] = 0.6
