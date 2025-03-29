@@ -190,9 +190,12 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             else:
                 payload[field] = value
 
-    if generation_config:
-        payload["generationConfig"] = generation_config
-        if "maxOutputTokens" not in generation_config:
+    max_token_65k_models = ["gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking"]
+    payload["generationConfig"] = generation_config
+    if "maxOutputTokens" not in generation_config:
+        if any(pro_model in original_model for pro_model in max_token_65k_models):
+            payload["generationConfig"]["maxOutputTokens"] = 65536
+        else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
 
     if request.model.endswith("-search"):
