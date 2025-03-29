@@ -144,7 +144,8 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         'include_usage',
         'logprobs',
         'top_logprobs',
-        'response_format'
+        'response_format',
+        'stream_options',
     ]
     generation_config = {}
 
@@ -387,7 +388,8 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         'user',
         'include_usage',
         'logprobs',
-        'top_logprobs'
+        'top_logprobs',
+        'stream_options',
     ]
     generation_config = {}
 
@@ -552,6 +554,7 @@ async def get_vertex_claude_payload(request, engine, provider, api_key=None):
         'n',
         'user',
         'include_usage',
+        'stream_options',
     ]
 
     for field, value in request.model_dump(exclude_unset=True).items():
@@ -848,6 +851,7 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
         'n',
         'user',
         'include_usage',
+        'stream_options',
     ]
 
     for field, value in request.model_dump(exclude_unset=True).items():
@@ -915,7 +919,8 @@ async def get_cohere_payload(request, engine, provider, api_key=None):
         'user',
         'include_usage',
         'logprobs',
-        'top_logprobs'
+        'top_logprobs',
+        'stream_options',
     ]
 
     for field, value in request.model_dump(exclude_unset=True).items():
@@ -962,7 +967,8 @@ async def get_cloudflare_payload(request, engine, provider, api_key=None):
         'user',
         'include_usage',
         'logprobs',
-        'top_logprobs'
+        'top_logprobs',
+        'stream_options',
     ]
 
     for field, value in request.model_dump(exclude_unset=True).items():
@@ -1144,6 +1150,7 @@ async def get_claude_payload(request, engine, provider, api_key=None):
         'n',
         'user',
         'include_usage',
+        'stream_options',
     ]
 
     for field, value in request.model_dump(exclude_unset=True).items():
