@@ -86,6 +86,9 @@ class Thinking(BaseModel):
     budget_tokens: Optional[int] = None
     type: Optional[Literal["enabled", "disabled"]] = None
 
+class StreamOptions(BaseModel):
+    include_usage: Optional[bool] = None
+
 class RequestModel(BaseRequest):
     model: str
     messages: List[Message]
@@ -105,6 +108,7 @@ class RequestModel(BaseRequest):
     tools: Optional[List[Tool]] = None
     response_format: Optional[ResponseFormat] = None
     thinking: Optional[Thinking] = None
+    stream_options: Optional[StreamOptions] = None
 
     def get_last_text_message(self) -> Optional[str]:
         for message in reversed(self.messages):
