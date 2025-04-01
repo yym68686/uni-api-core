@@ -50,7 +50,6 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                     try:
                         json_data = json.loads( "{" + line + "}")
                         content = json_data.get('text', '')
-                        content = "\\n".join(content.split("\\n"))
                         # content = content.replace("\n", "\n\n")
                         # if last_text_line == 0 and is_thinking:
                         #     content = "> " + content.lstrip()
@@ -108,7 +107,6 @@ async def fetch_vertex_claude_response_stream(client, url, headers, payload, mod
                     try:
                         json_data = json.loads( "{" + line + "}")
                         content = json_data.get('text', '')
-                        content = "\\n".join(content.split("\\n"))
                         sse_string = await generate_sse_response(timestamp, model, content=content)
                         yield sse_string
                     except json.JSONDecodeError:
