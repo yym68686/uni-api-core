@@ -288,7 +288,7 @@ class ThreadSafeCircularList:
             # self.requests[item] = []
             logger.warning(f"API key {item} 已进入冷却状态，冷却时间 {cooling_time} 秒")
 
-    async def is_rate_limited(self, item, model: str = None) -> bool:
+    async def is_rate_limited(self, item, model: str = None, is_check: bool = False) -> bool:
         now = time()
         # 检查是否在冷却中
         if now < self.cooling_until[item]:
@@ -321,7 +321,8 @@ class ThreadSafeCircularList:
             # 使用特定模型的请求记录进行计算
             recent_requests = sum(1 for req in self.requests[item][model_key] if req > now - limit_period)
             if recent_requests >= limit_count:
-                logger.warning(f"API key {item} 对模型 {model_key} 已达到速率限制 ({limit_count}/{limit_period}秒)")
+                if not is_check:
+                    logger.warning(f"API key {item}: model: {model_key} has been rate limited ({limit_count}/{limit_period} seconds)")
                 return True
 
         # 清理太旧的请求记录
@@ -329,7 +330,9 @@ class ThreadSafeCircularList:
         self.requests[item][model_key] = [req for req in self.requests[item][model_key] if req > now - max_period]
 
         # 记录新的请求
-        self.requests[item][model_key].append(now)
+        if not is_check:
+            self.requests[item][model_key].append(now)
+
         return False
 
     async def next(self, model: str = None):
@@ -348,6 +351,30 @@ class ThreadSafeCircularList:
                 if self.index == start_index:
                     logger.warning(f"All API keys are rate limited!")
                     raise HTTPException(status_code=429, detail="Too many requests")
+
+    async def is_all_rate_limited(self, model: str = None) -> bool:
+        """检查是否所有的items都被速率限制
+
+        与next方法不同，此方法不会改变任何内部状态（如self.index），
+        仅返回一个布尔值表示是否所有的key都被限制。
+
+        Args:
+            model: 要检查的模型名称，默认为None
+
+        Returns:
+            bool: 如果所有items都被速率限制返回True，否则返回False
+        """
+        if len(self.items) == 0:
+            return False
+
+        async with self.lock:
+            for item in self.items:
+                if not await self.is_rate_limited(item, model, is_check=True):
+                    return False
+
+            # 如果遍历完所有items都被限制，返回True
+            # logger.debug(f"Check result: all items are rate limited!")
+            return True
 
     async def after_next_current(self):
         # 返回当前取出的 API，因为已经调用了 next，所以当前API应该是上一个
