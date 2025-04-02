@@ -120,7 +120,11 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             {
                 "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
                 "threshold": safety_settings
-            }
+            },
+            {
+                "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+                "threshold": "BLOCK_NONE"
+            },
         ]
     }
 
