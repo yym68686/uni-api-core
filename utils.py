@@ -155,7 +155,8 @@ def update_initial_model(provider):
         proxy = safe_get(provider, "preferences", "proxy", default=None)
         client_config = get_proxy(proxy)
         if engine == "gemini":
-            url = "https://generativelanguage.googleapis.com/v1beta/models"
+            before_v1 = api_url.split("/v1beta")[0]
+            url = before_v1 + "/v1beta/models"
             params = {"key": api}
             with httpx.Client(**client_config) as client:
                 response = client.get(url, params=params)
