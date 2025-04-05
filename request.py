@@ -96,7 +96,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             content[0]["text"] = re.sub(r"_+", "_", content[0]["text"])
             systemInstruction = {"parts": content}
 
-    off_models = ["gemini-2.0-flash-exp", "gemini-1.5", "gemini-2.5-pro"]
+    off_models = ["gemini-2.0-flash", "gemini-1.5", "gemini-2.5-pro"]
     if any(off_model in original_model for off_model in off_models):
         safety_settings = "OFF"
     else:
