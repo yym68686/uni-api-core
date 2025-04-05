@@ -1,6 +1,7 @@
 import re
 import io
 import os
+import ast
 import json
 import httpx
 import base64
@@ -681,3 +682,27 @@ async def get_text_message(message, engine = None):
     if engine == "cohere":
         return message
     raise ValueError("Unknown engine")
+
+def parse_json_safely(json_str):
+    """
+    尝试解析JSON字符串，先使用ast.literal_eval，失败则使用json.loads
+
+    Args:
+        json_str: 要解析的JSON字符串
+
+    Returns:
+        解析后的Python对象
+
+    Raises:
+        Exception: 当两种方法都失败时抛出异常
+    """
+    try:
+        # 首先尝试使用ast.literal_eval解析
+        return ast.literal_eval(json_str)
+    except (SyntaxError, ValueError):
+        try:
+            # 如果失败，尝试使用json.loads解析
+            return json.loads(json_str, strict=False)
+        except json.JSONDecodeError as e:
+            # 两种方法都失败，抛出异常
+            raise Exception(f"无法解析JSON字符串: {e}")

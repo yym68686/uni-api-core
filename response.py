@@ -5,7 +5,7 @@ from datetime import datetime
 
 from .log_config import logger
 
-from .utils import safe_get, generate_sse_response, generate_no_stream_response, end_of_line
+from .utils import safe_get, generate_sse_response, generate_no_stream_response, end_of_line, parse_json_safely
 
 async def check_response(response, error_log):
     if response and not (200 <= response.status_code < 300):
@@ -30,6 +30,9 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
         function_full_response = "{"
         need_function_call = False
         is_finish = False
+        promptTokenCount = 0
+        candidatesTokenCount = 0
+        totalTokenCount = 0
         # line_index = 0
         # last_text_line = 0
         # if "thinking" in model:
@@ -42,9 +45,19 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
                 # line_index += 1
+
                 if line and '\"finishReason\": \"' in line:
                     is_finish = True
-                    break
+                if is_finish and '\"promptTokenCount\": ' in line:
+                    json_data = parse_json_safely( "{" + line + "}")
+                    promptTokenCount = json_data.get('promptTokenCount', 0)
+                if is_finish and '\"candidatesTokenCount\": ' in line:
+                    json_data = parse_json_safely( "{" + line + "}")
+                    candidatesTokenCount = json_data.get('candidatesTokenCount', 0)
+                if is_finish and '\"totalTokenCount\": ' in line:
+                    json_data = parse_json_safely( "{" + line + "}")
+                    totalTokenCount = json_data.get('totalTokenCount', 0)
+
                 # print(line)
                 if line and '\"text\": \"' in line:
                     try:
@@ -73,9 +86,6 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
 
                     function_full_response += line
 
-            if is_finish:
-                break
-
         if need_function_call:
             function_call = json.loads(function_full_response)
             function_call_name = function_call["functionCall"]["name"]
@@ -84,6 +94,10 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
             function_full_response = json.dumps(function_call["functionCall"]["args"])
             sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=None, function_call_content=function_full_response)
             yield sse_string
+
+        sse_string = await generate_sse_response(timestamp, model, None, None, None, None, None, totalTokenCount, promptTokenCount, candidatesTokenCount)
+        yield sse_string
+
     yield "data: [DONE]" + end_of_line
 
 async def fetch_vertex_claude_response_stream(client, url, headers, payload, model):
@@ -98,11 +112,29 @@ async def fetch_vertex_claude_response_stream(client, url, headers, payload, mod
         revicing_function_call = False
         function_full_response = "{"
         need_function_call = False
+        is_finish = False
+        promptTokenCount = 0
+        candidatesTokenCount = 0
+        totalTokenCount = 0
+
         async for chunk in response.aiter_text():
             buffer += chunk
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
                 # logger.info(f"{line}")
+
+                if line and '\"finishReason\": \"' in line:
+                    is_finish = True
+                if is_finish and '\"promptTokenCount\": ' in line:
+                    json_data = parse_json_safely( "{" + line + "}")
+                    promptTokenCount = json_data.get('promptTokenCount', 0)
+                if is_finish and '\"candidatesTokenCount\": ' in line:
+                    json_data = parse_json_safely( "{" + line + "}")
+                    candidatesTokenCount = json_data.get('candidatesTokenCount', 0)
+                if is_finish and '\"totalTokenCount\": ' in line:
+                    json_data = parse_json_safely( "{" + line + "}")
+                    totalTokenCount = json_data.get('totalTokenCount', 0)
+
                 if line and '\"text\": \"' in line:
                     try:
                         json_data = json.loads( "{" + line + "}")
@@ -130,6 +162,10 @@ async def fetch_vertex_claude_response_stream(client, url, headers, payload, mod
             function_full_response = json.dumps(function_call["input"])
             sse_string = await generate_sse_response(timestamp, model, content=None, tools_id=function_call_id, function_call_name=None, function_call_content=function_full_response)
             yield sse_string
+
+        sse_string = await generate_sse_response(timestamp, model, None, None, None, None, None, totalTokenCount, promptTokenCount, candidatesTokenCount)
+        yield sse_string
+
     yield "data: [DONE]" + end_of_line
 
 async def fetch_gpt_response_stream(client, url, headers, payload):
