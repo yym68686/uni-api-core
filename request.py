@@ -294,12 +294,20 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         location = gemini1
         search_tool = {"googleSearchRetrieval": {}}
 
-    url = "https://{LOCATION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(
-        LOCATION=await location.next(),
-        PROJECT_ID=project_id,
-        MODEL_ID=original_model,
-        stream=gemini_stream
-    )
+    if "google-vertex-ai" in provider.get("base_url", ""):
+        url = provider.get("base_url").rstrip('/') + "/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(
+            LOCATION=await location.next(),
+            PROJECT_ID=project_id,
+            MODEL_ID=original_model,
+            stream=gemini_stream
+        )
+    else:
+        url = "https://{LOCATION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(
+            LOCATION=await location.next(),
+            PROJECT_ID=project_id,
+            MODEL_ID=original_model,
+            stream=gemini_stream
+        )
 
     messages = []
     systemInstruction = None

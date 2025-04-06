@@ -66,7 +66,7 @@ def get_engine(provider, endpoint=None, original_model=""):
     stream = None
     if parsed_url.path.endswith("/v1beta") or parsed_url.path.endswith("/v1") or parsed_url.netloc == 'generativelanguage.googleapis.com':
         engine = "gemini"
-    elif parsed_url.netloc.rstrip('/').endswith('aiplatform.googleapis.com'):
+    elif parsed_url.netloc.rstrip('/').endswith('aiplatform.googleapis.com') or (parsed_url.netloc.rstrip('/').endswith('gateway.ai.cloudflare.com') and "google-vertex-ai" in parsed_url.path):
         engine = "vertex"
     elif parsed_url.netloc.rstrip('/').endswith('openai.azure.com') or parsed_url.netloc.rstrip('/').endswith('services.ai.azure.com'):
         engine = "azure"
@@ -706,3 +706,9 @@ def parse_json_safely(json_str):
         except json.JSONDecodeError as e:
             # 两种方法都失败，抛出异常
             raise Exception(f"无法解析JSON字符串: {e}")
+
+if __name__ == "__main__":
+    provider = {
+        "base_url": "https://gateway.ai.cloudflare.com/v1/%7Baccount_id%7D/%7Bgateway_id%7D/google-vertex-ai",
+    }
+    print(get_engine(provider))
