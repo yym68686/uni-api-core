@@ -135,7 +135,7 @@ async def fetch_vertex_claude_response_stream(client, url, headers, payload, mod
                     json_data = parse_json_safely( "{" + line + "}")
                     totalTokenCount = json_data.get('totalTokenCount', 0)
 
-                if line and '\"text\": \"' in line:
+                if line and '\"text\": \"' in line and is_finish == False:
                     try:
                         json_data = json.loads( "{" + line + "}")
                         content = json_data.get('text', '')
