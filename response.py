@@ -59,7 +59,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                     totalTokenCount = json_data.get('totalTokenCount', 0)
 
                 # print(line)
-                if line and '\"text\": \"' in line:
+                if line and '\"text\": \"' in line and is_finish == False:
                     try:
                         json_data = json.loads( "{" + line + "}")
                         content = json_data.get('text', '')
