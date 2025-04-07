@@ -46,7 +46,10 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                 line, buffer = buffer.split("\n", 1)
                 # line_index += 1
 
+                # https://ai.google.dev/api/generate-content?hl=zh-cn#FinishReason
                 if line and '\"finishReason\": \"' in line:
+                    if "stop" not in line.lower():
+                        logger.error(f"finishReason: {line}")
                     is_finish = True
                 if is_finish and '\"promptTokenCount\": ' in line:
                     json_data = parse_json_safely( "{" + line + "}")
