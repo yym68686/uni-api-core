@@ -162,6 +162,7 @@ class AudioTranscriptionRequest(BaseRequest):
     response_format: Optional[str] = None
     temperature: Optional[float] = None
     stream: bool = False
+    timestamp_granularities: Optional[List[Literal["word", "segment"]]] = Field(default=["segment"])
 
     class Config:
         arbitrary_types_allowed = True
