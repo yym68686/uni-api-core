@@ -1272,8 +1272,9 @@ async def get_whisper_payload(request, engine, provider, api_key=None):
         payload["temperature"] = request.temperature
     if request.language:
         payload["language"] = request.language
+
     if request.timestamp_granularities:
-        payload["timestamp_granularities"] = request.timestamp_granularities
+        payload["timestamp_granularities[]"] = request.timestamp_granularities
 
     return url, headers, payload
 
