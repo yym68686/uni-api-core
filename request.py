@@ -1273,6 +1273,7 @@ async def get_whisper_payload(request, engine, provider, api_key=None):
     if request.language:
         payload["language"] = request.language
 
+    # https://platform.openai.com/docs/api-reference/audio/createTranscription
     if request.timestamp_granularities:
         payload["timestamp_granularities[]"] = request.timestamp_granularities
 
