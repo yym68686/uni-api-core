@@ -683,6 +683,9 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         # request.stream = False
         payload.pop("stream_options", None)
 
+    if "api.x.ai" in url:
+        payload.pop("stream_options", None)
+
     if "o3-mini" in original_model:
         if request.model.endswith("high"):
             payload["reasoning_effort"] = "high"
