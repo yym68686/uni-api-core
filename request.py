@@ -694,6 +694,12 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         else:
             payload["reasoning_effort"] = "medium"
 
+    if "grok-3-mini" in original_model:
+        if request.model.endswith("high"):
+            payload["reasoning_effort"] = "high"
+        elif request.model.endswith("low"):
+            payload["reasoning_effort"] = "low"
+
     if "o3-mini" in original_model or "o1" in original_model:
         if "temperature" in payload:
             payload.pop("temperature")
