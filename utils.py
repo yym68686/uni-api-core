@@ -124,6 +124,7 @@ def get_engine(provider, endpoint=None, original_model=""):
 
     return engine, stream
 
+from httpx_socks import AsyncProxyTransport
 def get_proxy(proxy, client_config = {}):
     if proxy:
         # 解析代理URL
@@ -132,7 +133,6 @@ def get_proxy(proxy, client_config = {}):
 
         if scheme == 'socks5':
             try:
-                from httpx_socks import AsyncProxyTransport
                 proxy = proxy.replace('socks5h://', 'socks5://')
                 transport = AsyncProxyTransport.from_url(proxy)
                 client_config["transport"] = transport
