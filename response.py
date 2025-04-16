@@ -1,6 +1,8 @@
+import re
 import json
 import random
 import string
+import base64
 from datetime import datetime
 
 from .log_config import logger
@@ -446,6 +448,53 @@ async def fetch_claude_response_stream(client, url, headers, payload, model):
                         yield sse_string
     yield "data: [DONE]" + end_of_line
 
+async def fetch_aws_response_stream(client, url, headers, payload, model):
+    timestamp = int(datetime.timestamp(datetime.now()))
+    async with client.stream('POST', url, headers=headers, json=payload) as response:
+        error_message = await check_response(response, "fetch_aws_response_stream")
+        if error_message:
+            yield error_message
+            return
+
+        async for line in response.aiter_text():
+            if not line or \
+            line.strip() == "" or\
+            line.strip().startswith(':content-type') or \
+            line.strip().startswith(':event-type'): # 过滤掉完全空的行或只有空白的行
+                continue
+
+            json_match = re.search(r'event{.*?}', line)
+            if not json_match:
+                continue
+            try:
+                chunk_data = json.loads(json_match.group(0).lstrip('event'))
+            except json.JSONDecodeError:
+                logger.error(f"DEBUG json.JSONDecodeError: {json_match.group(0).lstrip('event')!r}")
+                continue
+
+            # --- 后续处理逻辑不变 ---
+            if "bytes" in chunk_data:
+                # 解码 Base64 编码的字节
+                decoded_bytes = base64.b64decode(chunk_data["bytes"])
+                # 将解码后的字节再次解析为 JSON
+                payload_chunk = json.loads(decoded_bytes.decode('utf-8'))
+                # print(f"DEBUG payload_chunk: {payload_chunk!r}")
+
+                text = safe_get(payload_chunk, "delta", "text", default="")
+                if text:
+                    sse_string = await generate_sse_response(timestamp, model, text, None, None)
+                    yield sse_string
+
+                usage = safe_get(payload_chunk, "amazon-bedrock-invocationMetrics", default="")
+                if usage:
+                    input_tokens = usage.get("inputTokenCount", 0)
+                    output_tokens = usage.get("outputTokenCount", 0)
+                    total_tokens = input_tokens + output_tokens
+                    sse_string = await generate_sse_response(timestamp, model, None, None, None, None, None, total_tokens, input_tokens, output_tokens)
+                    yield sse_string
+
+    yield "data: [DONE]" + end_of_line
+
 async def fetch_response(client, url, headers, payload, engine, model):
     response = None
     if payload.get("file"):
@@ -461,7 +510,7 @@ async def fetch_response(client, url, headers, payload, engine, model):
     if engine == "tts":
         yield response.read()
 
-    elif engine == "gemini" or engine == "vertex-gemini":
+    elif engine == "gemini" or engine == "vertex-gemini" or engine == "aws":
         response_json = response.json()
 
         if isinstance(response_json, str):
@@ -541,6 +590,9 @@ async def fetch_response_stream(client, url, headers, payload, engine, model):
             yield chunk
     elif engine == "claude" or engine == "vertex-claude":
         async for chunk in fetch_claude_response_stream(client, url, headers, payload, model):
+            yield chunk
+    elif engine == "aws":
+        async for chunk in fetch_aws_response_stream(client, url, headers, payload, model):
             yield chunk
     elif engine == "gpt":
         async for chunk in fetch_gpt_response_stream(client, url, headers, payload):

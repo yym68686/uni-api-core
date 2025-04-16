@@ -76,6 +76,8 @@ def get_engine(provider, endpoint=None, original_model=""):
         engine = "cloudflare"
     elif parsed_url.netloc == 'api.anthropic.com' or parsed_url.path.endswith("v1/messages"):
         engine = "claude"
+    elif 'amazonaws.com' in parsed_url.netloc:
+        engine = "aws"
     elif parsed_url.netloc == 'api.cohere.com':
         engine = "cohere"
         stream = True
@@ -650,7 +652,7 @@ async def get_image_message(base64_image, engine = None):
                 "url": base64_image,
             }
         }
-    if "claude" == engine or "vertex-claude" == engine:
+    if "claude" == engine or "vertex-claude" == engine or "aws" == engine:
         # if not validate_image(base64_image.split(",")[1], image_type):
         #     raise ValueError(f"Invalid image format. Expected {image_type}")
         return {
@@ -671,7 +673,7 @@ async def get_image_message(base64_image, engine = None):
     raise ValueError("Unknown engine")
 
 async def get_text_message(message, engine = None):
-    if "gpt" == engine or "claude" == engine or "openrouter" == engine or "vertex-claude" == engine or "azure" == engine:
+    if "gpt" == engine or "claude" == engine or "openrouter" == engine or "vertex-claude" == engine or "azure" == engine or "aws" == engine:
         return {"type": "text", "text": message}
     if "gemini" == engine or "vertex-gemini" == engine:
         return {"text": message}
