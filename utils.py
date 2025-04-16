@@ -132,14 +132,10 @@ def get_proxy(proxy, client_config = {}):
         scheme = parsed.scheme.rstrip('h')
 
         if scheme == 'socks5':
-            try:
-                proxy = proxy.replace('socks5h://', 'socks5://')
-                transport = AsyncProxyTransport.from_url(proxy)
-                client_config["transport"] = transport
-                # print("proxy", proxy)
-            except ImportError:
-                logger.error("httpx-socks package is required for SOCKS proxy support")
-                raise ImportError("Please install httpx-socks package for SOCKS proxy support: pip install httpx-socks")
+            proxy = proxy.replace('socks5h://', 'socks5://')
+            transport = AsyncProxyTransport.from_url(proxy)
+            client_config["transport"] = transport
+            # print("proxy", proxy)
         else:
             client_config["proxies"] = {
                 "http://": proxy,
