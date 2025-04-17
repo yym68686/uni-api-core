@@ -456,42 +456,46 @@ async def fetch_aws_response_stream(client, url, headers, payload, model):
             yield error_message
             return
 
+        buffer = ""
         async for line in response.aiter_text():
-            if not line or \
-            line.strip() == "" or\
-            line.strip().startswith(':content-type') or \
-            line.strip().startswith(':event-type'): # 过滤掉完全空的行或只有空白的行
-                continue
+            buffer += line
+            while "\r" in buffer:
+                line, buffer = buffer.split("\r", 1)
+                if not line or \
+                line.strip() == "" or \
+                line.strip().startswith(':content-type') or \
+                line.strip().startswith(':event-type'): # 过滤掉完全空的行或只有空白的行
+                    continue
 
-            json_match = re.search(r'event{.*?}', line)
-            if not json_match:
-                continue
-            try:
-                chunk_data = json.loads(json_match.group(0).lstrip('event'))
-            except json.JSONDecodeError:
-                logger.error(f"DEBUG json.JSONDecodeError: {json_match.group(0).lstrip('event')!r}")
-                continue
+                json_match = re.search(r'event{.*?}', line)
+                if not json_match:
+                    continue
+                try:
+                    chunk_data = json.loads(json_match.group(0).lstrip('event'))
+                except json.JSONDecodeError:
+                    logger.error(f"DEBUG json.JSONDecodeError: {json_match.group(0).lstrip('event')!r}")
+                    continue
 
-            # --- 后续处理逻辑不变 ---
-            if "bytes" in chunk_data:
-                # 解码 Base64 编码的字节
-                decoded_bytes = base64.b64decode(chunk_data["bytes"])
-                # 将解码后的字节再次解析为 JSON
-                payload_chunk = json.loads(decoded_bytes.decode('utf-8'))
-                # print(f"DEBUG payload_chunk: {payload_chunk!r}")
+                # --- 后续处理逻辑不变 ---
+                if "bytes" in chunk_data:
+                    # 解码 Base64 编码的字节
+                    decoded_bytes = base64.b64decode(chunk_data["bytes"])
+                    # 将解码后的字节再次解析为 JSON
+                    payload_chunk = json.loads(decoded_bytes.decode('utf-8'))
+                    # print(f"DEBUG payload_chunk: {payload_chunk!r}")
 
-                text = safe_get(payload_chunk, "delta", "text", default="")
-                if text:
-                    sse_string = await generate_sse_response(timestamp, model, text, None, None)
-                    yield sse_string
+                    text = safe_get(payload_chunk, "delta", "text", default="")
+                    if text:
+                        sse_string = await generate_sse_response(timestamp, model, text, None, None)
+                        yield sse_string
 
-                usage = safe_get(payload_chunk, "amazon-bedrock-invocationMetrics", default="")
-                if usage:
-                    input_tokens = usage.get("inputTokenCount", 0)
-                    output_tokens = usage.get("outputTokenCount", 0)
-                    total_tokens = input_tokens + output_tokens
-                    sse_string = await generate_sse_response(timestamp, model, None, None, None, None, None, total_tokens, input_tokens, output_tokens)
-                    yield sse_string
+                    usage = safe_get(payload_chunk, "amazon-bedrock-invocationMetrics", default="")
+                    if usage:
+                        input_tokens = usage.get("inputTokenCount", 0)
+                        output_tokens = usage.get("outputTokenCount", 0)
+                        total_tokens = input_tokens + output_tokens
+                        sse_string = await generate_sse_response(timestamp, model, None, None, None, None, None, total_tokens, input_tokens, output_tokens)
+                        yield sse_string
 
     yield "data: [DONE]" + end_of_line
 
