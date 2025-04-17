@@ -538,7 +538,7 @@ async def fetch_response(client, url, headers, payload, engine, model):
         if role == "model":
             role = "assistant"
         else:
-            logger.error(f"Unknown role: {role}")
+            logger.error(f"Unknown role: {role}, parsed_data: {parsed_data}")
             role = "assistant"
 
         function_call_name = safe_get(parsed_data, -1, "candidates", 0, "content", "parts", 0, "functionCall", "name", default=None)
