@@ -917,7 +917,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
 
     for field, value in request.model_dump(exclude_unset=True).items():
         if field not in miss_fields and value is not None:
-            if field == "max_tokens" and ("o1" in original_model or "o3" in original_model):
+            if field == "max_tokens" and ("o1" in original_model or "o3" in original_model or "o4" in original_model):
                 payload["max_completion_tokens"] = value
             else:
                 payload[field] = value
