@@ -22,15 +22,15 @@ from .utils import (
 
 async def get_gemini_payload(request, engine, provider, api_key=None):
     import re
-    
+
     headers = {
         'Content-Type': 'application/json'
     }
-    
+
     # 获取映射后的实际模型ID
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
-    
+
     gemini_stream = "streamGenerateContent"
     url = provider['base_url']
     parsed_url = urllib.parse.urlparse(url)
@@ -206,7 +206,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["maxOutputTokens"] = 65536
         else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
-    
+
     # 从请求模型名中检测思考预算设置
     m = re.match(r".*-think-(-?\d+)", request.model)
     if m:
@@ -220,7 +220,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         except ValueError:
             # 如果转换为整数失败，忽略思考预算设置
             pass
-    
+
     # 检测search标签
     if request.model.endswith("-search"):
         if "tools" not in payload:
@@ -939,21 +939,13 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
     if provider.get("tools") == False or "o1-mini" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
+
     if "models.inference.ai.azure.com" in url:
         payload["stream"] = False
-        # request.stream = False
         payload.pop("stream_options", None)
 
     if "api.x.ai" in url:
         payload.pop("stream_options", None)
-
-    if "o3-mini" in original_model:
-        if request.model.endswith("high"):
-            payload["reasoning_effort"] = "high"
-        elif request.model.endswith("low"):
-            payload["reasoning_effort"] = "low"
-        else:
-            payload["reasoning_effort"] = "medium"
 
     if "grok-3-mini" in original_model:
         if request.model.endswith("high"):
@@ -961,7 +953,14 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         elif request.model.endswith("low"):
             payload["reasoning_effort"] = "low"
 
-    if "o3-mini" in original_model or "o1" in original_model:
+    if "o1" in original_model or "o3" in original_model or "o4" in original_model:
+        if request.model.endswith("high"):
+            payload["reasoning_effort"] = "high"
+        elif request.model.endswith("low"):
+            payload["reasoning_effort"] = "low"
+        else:
+            payload["reasoning_effort"] = "medium"
+
         if "temperature" in payload:
             payload.pop("temperature")
 
