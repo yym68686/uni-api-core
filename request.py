@@ -22,62 +22,15 @@ from .utils import (
 
 async def get_gemini_payload(request, engine, provider, api_key=None):
     import re
-
-    # 1. 解析模型名后缀
-    model_name = request.model
-    search_flag = False
-    thinking_budget = None
-
-    # 先处理 -search
-    if model_name.endswith("-search"):
-        search_flag = True
-        model_name = model_name[:-7]
-
-    # 处理 thinking 相关后缀
-    if model_name.endswith("-nothink"):
-        thinking_budget = 0
-        model_name = model_name[:-8]
-    elif model_name.endswith("-max"):
-        thinking_budget = 24576
-        model_name = model_name[:-4]
-    elif model_name.endswith("-high"):
-        thinking_budget = 16384
-        model_name = model_name[:-5]
-    elif model_name.endswith("-medium"):
-        thinking_budget = 8192
-        model_name = model_name[:-7]
-    elif model_name.endswith("-low"):
-        thinking_budget = 1024
-        model_name = model_name[:-4]
-    else:
-        m = re.match(r"(.+)-forcethink(\d+)$", model_name)
-        if m:
-            model_name = m.group(1)
-            val = int(m.group(2))
-            thinking_budget = max(0, min(val, 24576))
-
-    model_dict = get_model_dict(provider)
     
-    # 兼容未定义模型名
-    original_model = model_dict.get(model_name, model_dict.get(request.model, request.model))
-
-    # 强制去除 original_model 里的 -search/-nothink/-max/-high/-medium/-low/-forcethinkNNN 后缀，最多去除两次已知后缀，兼容历史配置
-    suffixes = ["-search", "-nothink", "-max", "-high", "-medium", "-low"]
-    for _ in range(2):
-        for suffix in suffixes:
-            if original_model.endswith(suffix):
-                original_model = original_model[: -len(suffix)]
-                break
-        else:
-            break
-    m = re.match(r"(.+)-forcethink(\d+)$", original_model)
-    if m:
-        original_model = m.group(1)
-
     headers = {
         'Content-Type': 'application/json'
     }
-
+    
+    # 获取映射后的实际模型ID
+    model_dict = get_model_dict(provider)
+    original_model = model_dict[request.model]
+    
     gemini_stream = "streamGenerateContent"
     url = provider['base_url']
     parsed_url = urllib.parse.urlparse(url)
@@ -128,15 +81,15 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 {
                     "role": "function",
                     "parts": [{
-                        "functionResponse": {
+                    "functionResponse": {
+                        "name": function_call_name,
+                        "response": {
                             "name": function_call_name,
-                            "response": {
-                                "name": function_call_name,
-                                "content": {
-                                    "result": msg.content,
-                                }
+                            "content": {
+                                "result": msg.content,
                             }
                         }
+                    }
                     }]
                 }
             )
@@ -253,13 +206,23 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["maxOutputTokens"] = 65536
         else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
-
-    # 根据解析结果设置 thinkingConfig
-    if thinking_budget is not None:
-        payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": thinking_budget}
-
-    # 根据解析结果设置 search 工具
-    if search_flag:
+    
+    # 从请求模型名中检测思考预算设置
+    m = re.match(r".*-think-(-?\d+)", request.model)
+    if m:
+        try:
+            val = int(m.group(1))
+            if val < 0:
+                val = 0
+            elif val > 24576:
+                val = 24576
+            payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": val}
+        except ValueError:
+            # 如果转换为整数失败，忽略思考预算设置
+            pass
+    
+    # 检测search标签
+    if request.model.endswith("-search"):
         if "tools" not in payload:
             payload["tools"] = [{"googleSearch": {}}]
         else:
