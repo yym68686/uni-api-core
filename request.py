@@ -26,6 +26,13 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     }
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
+    
+    # 检测 -nothink 后缀并处理
+    disable_thinking = False
+    if "-nothink" in original_model:
+        disable_thinking = True
+        original_model = original_model.replace("-nothink", "")
+    
     gemini_stream = "streamGenerateContent"
     url = provider['base_url']
     parsed_url = urllib.parse.urlparse(url)
@@ -96,7 +103,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             content[0]["text"] = re.sub(r"_+", "_", content[0]["text"])
             systemInstruction = {"parts": content}
 
-    off_models = ["gemini-2.0-flash", "gemini-1.5", "gemini-2.5-pro"]
+    off_models = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5", "gemini-2.5-pro"]
     if any(off_model in original_model for off_model in off_models):
         safety_settings = "OFF"
     else:
@@ -196,13 +203,17 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             else:
                 payload[field] = value
 
-    max_token_65k_models = ["gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking"]
+    max_token_65k_models = ["gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking", "gemini-2.5-flash"]
     payload["generationConfig"] = generation_config
     if "maxOutputTokens" not in generation_config:
         if any(pro_model in original_model for pro_model in max_token_65k_models):
             payload["generationConfig"]["maxOutputTokens"] = 65536
         else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
+    
+    # 如果禁用思考功能，添加 thinkingConfig 到 generationConfig
+    if disable_thinking:
+        payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
 
     if request.model.endswith("-search"):
         if "tools" not in payload:
