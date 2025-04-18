@@ -21,18 +21,49 @@ from .utils import (
 )
 
 async def get_gemini_payload(request, engine, provider, api_key=None):
+    import re
+
+    # 1. 解析模型名后缀
+    model_name = request.model
+    search_flag = False
+    thinking_budget = None
+
+    # 先处理 -search
+    if model_name.endswith("-search"):
+        search_flag = True
+        model_name = model_name[:-7]
+
+    # 处理 thinking 相关后缀
+    if model_name.endswith("-nothink"):
+        thinking_budget = 0
+        model_name = model_name[:-8]
+    elif model_name.endswith("-max"):
+        thinking_budget = 24576
+        model_name = model_name[:-4]
+    elif model_name.endswith("-high"):
+        thinking_budget = 16384
+        model_name = model_name[:-5]
+    elif model_name.endswith("-medium"):
+        thinking_budget = 8192
+        model_name = model_name[:-7]
+    elif model_name.endswith("-low"):
+        thinking_budget = 1024
+        model_name = model_name[:-4]
+    else:
+        m = re.match(r"(.+)-forcethink(\d+)$", model_name)
+        if m:
+            model_name = m.group(1)
+            val = int(m.group(2))
+            thinking_budget = max(0, min(val, 24576))
+
+    model_dict = get_model_dict(provider)
+    # 兼容未定义模型名
+    original_model = model_dict.get(model_name, model_dict.get(request.model, request.model))
+
     headers = {
         'Content-Type': 'application/json'
     }
-    model_dict = get_model_dict(provider)
-    original_model = model_dict[request.model]
-    
-    # 检测 -nothink 后缀并处理
-    disable_thinking = False
-    if "-nothink" in original_model:
-        disable_thinking = True
-        original_model = original_model.replace("-nothink", "")
-    
+
     gemini_stream = "streamGenerateContent"
     url = provider['base_url']
     parsed_url = urllib.parse.urlparse(url)
@@ -210,20 +241,17 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["maxOutputTokens"] = 65536
         else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
-    
-    # 如果禁用思考功能，添加 thinkingConfig 到 generationConfig
-    if disable_thinking:
-        payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
 
-    if request.model.endswith("-search"):
+    # 根据解析结果设置 thinkingConfig
+    if thinking_budget is not None:
+        payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": thinking_budget}
+
+    # 根据解析结果设置 search 工具
+    if search_flag:
         if "tools" not in payload:
-            payload["tools"] = [{
-                "googleSearch": {}
-            }]
+            payload["tools"] = [{"googleSearch": {}}]
         else:
-            payload["tools"].append({
-                "googleSearch": {}
-            })
+            payload["tools"].append({"googleSearch": {}})
 
     return url, headers, payload
 
