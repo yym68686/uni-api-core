@@ -21,21 +21,24 @@ from .utils import (
 )
 
 async def get_gemini_payload(request, engine, provider, api_key=None):
+    import re
+    
     headers = {
         'Content-Type': 'application/json'
     }
+    
+    # 获取映射后的实际模型ID
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
+    
     gemini_stream = "streamGenerateContent"
     url = provider['base_url']
     parsed_url = urllib.parse.urlparse(url)
-    # print("parsed_url", parsed_url)
     if "/v1beta" in parsed_url.path:
         api_version = "v1beta"
     else:
         api_version = "v1"
 
-    # https://generativelanguage.googleapis.com/v1beta/models/
     url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path.split('/models')[0].rstrip('/')}/models/{original_model}:{gemini_stream}?key={api_key}"
 
     messages = []
@@ -96,7 +99,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             content[0]["text"] = re.sub(r"_+", "_", content[0]["text"])
             systemInstruction = {"parts": content}
 
-    off_models = ["gemini-2.0-flash", "gemini-1.5", "gemini-2.5-pro"]
+    off_models = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5", "gemini-2.5-pro"]
     if any(off_model in original_model for off_model in off_models):
         safety_settings = "OFF"
     else:
@@ -196,23 +199,34 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             else:
                 payload[field] = value
 
-    max_token_65k_models = ["gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking"]
+    max_token_65k_models = ["gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking", "gemini-2.5-flash"]
     payload["generationConfig"] = generation_config
     if "maxOutputTokens" not in generation_config:
         if any(pro_model in original_model for pro_model in max_token_65k_models):
             payload["generationConfig"]["maxOutputTokens"] = 65536
         else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
-
+    
+    # 从请求模型名中检测思考预算设置
+    m = re.match(r".*-think-(-?\d+)", request.model)
+    if m:
+        try:
+            val = int(m.group(1))
+            if val < 0:
+                val = 0
+            elif val > 24576:
+                val = 24576
+            payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": val}
+        except ValueError:
+            # 如果转换为整数失败，忽略思考预算设置
+            pass
+    
+    # 检测search标签
     if request.model.endswith("-search"):
         if "tools" not in payload:
-            payload["tools"] = [{
-                "googleSearch": {}
-            }]
+            payload["tools"] = [{"googleSearch": {}}]
         else:
-            payload["tools"].append({
-                "googleSearch": {}
-            })
+            payload["tools"].append({"googleSearch": {}})
 
     return url, headers, payload
 
