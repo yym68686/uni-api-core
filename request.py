@@ -61,10 +61,14 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     # 兼容未定义模型名
     original_model = model_dict.get(model_name, model_dict.get(request.model, request.model))
 
-    # 强制去除 original_model 里的 -nothink/-max/-high/-medium/-low/-forcethinkNNN 后缀，兼容历史配置
-    for suffix in ["-nothink", "-max", "-high", "-medium", "-low"]:
-        if original_model.endswith(suffix):
-            original_model = original_model[: -len(suffix)]
+    # 强制去除 original_model 里的 -search/-nothink/-max/-high/-medium/-low/-forcethinkNNN 后缀，最多去除两次已知后缀，兼容历史配置
+    suffixes = ["-search", "-nothink", "-max", "-high", "-medium", "-low"]
+    for _ in range(2):
+        for suffix in suffixes:
+            if original_model.endswith(suffix):
+                original_model = original_model[: -len(suffix)]
+                break
+        else:
             break
     m = re.match(r"(.+)-forcethink(\d+)$", original_model)
     if m:
