@@ -57,8 +57,18 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             thinking_budget = max(0, min(val, 24576))
 
     model_dict = get_model_dict(provider)
+    
     # 兼容未定义模型名
     original_model = model_dict.get(model_name, model_dict.get(request.model, request.model))
+
+    # 强制去除 original_model 里的 -nothink/-max/-high/-medium/-low/-forcethinkNNN 后缀，兼容历史配置
+    for suffix in ["-nothink", "-max", "-high", "-medium", "-low"]:
+        if original_model.endswith(suffix):
+            original_model = original_model[: -len(suffix)]
+            break
+    m = re.match(r"(.+)-forcethink(\d+)$", original_model)
+    if m:
+        original_model = m.group(1)
 
     headers = {
         'Content-Type': 'application/json'
@@ -67,13 +77,11 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     gemini_stream = "streamGenerateContent"
     url = provider['base_url']
     parsed_url = urllib.parse.urlparse(url)
-    # print("parsed_url", parsed_url)
     if "/v1beta" in parsed_url.path:
         api_version = "v1beta"
     else:
         api_version = "v1"
 
-    # https://generativelanguage.googleapis.com/v1beta/models/
     url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path.split('/models')[0].rstrip('/')}/models/{original_model}:{gemini_stream}?key={api_key}"
 
     messages = []
@@ -116,15 +124,15 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 {
                     "role": "function",
                     "parts": [{
-                    "functionResponse": {
-                        "name": function_call_name,
-                        "response": {
+                        "functionResponse": {
                             "name": function_call_name,
-                            "content": {
-                                "result": msg.content,
+                            "response": {
+                                "name": function_call_name,
+                                "content": {
+                                    "result": msg.content,
+                                }
                             }
                         }
-                    }
                     }]
                 }
             )
