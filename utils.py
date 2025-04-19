@@ -91,6 +91,7 @@ def get_engine(provider, endpoint=None, original_model=""):
     and "deepseek" not in original_model \
     and "o1" not in original_model \
     and "o3" not in original_model \
+    and "o4" not in original_model \
     and "gemini" not in original_model \
     and "learnlm" not in original_model \
     and "grok" not in original_model \
