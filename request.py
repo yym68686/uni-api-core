@@ -300,7 +300,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
     original_model = model_dict[request.model]
     search_tool = None
 
-    pro_models = ["gemini-2.5-pro", "gemini-2.0-pro", "gemini-exp"]
+    pro_models = ["gemini-2.5", "gemini-2.0", "gemini-exp"]
     if any(pro_model in original_model for pro_model in pro_models):
         location = gemini2
         search_tool = {"googleSearch": {}}
