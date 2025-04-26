@@ -946,7 +946,8 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
 
     if "api.x.ai" in url:
         payload.pop("stream_options", None)
-        payload.pop("presencePenalty", None)
+        payload.pop("presence_penalty", None)
+        payload.pop("frequency_penalty", None)
 
     if "grok-3-mini" in original_model:
         if request.model.endswith("high"):
