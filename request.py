@@ -997,7 +997,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
 
     return url, headers, payload
 
-def build_azure_endpoint(base_url, deployment_id, api_version="2024-10-21"):
+def build_azure_endpoint(base_url, deployment_id, api_version="2025-01-01-preview"):
     # 移除base_url末尾的斜杠(如果有)
     base_url = base_url.rstrip('/')
     final_url = base_url
