@@ -551,30 +551,27 @@ async def generate_no_stream_response(timestamp, model, content=None, tools_id=N
 
     return json_data
 
-def get_image_format(file_content):
+def get_image_format(file_content: bytes):
     try:
         img = Image.open(io.BytesIO(file_content))
         return img.format.lower()
     except:
         return None
 
-def encode_image(image_path):
-    with open(image_path, "rb") as image_file:
-        file_content = image_file.read()
-        img_format = get_image_format(file_content)
-        if not img_format:
-            raise ValueError("无法识别的图片格式")
-        base64_encoded = base64.b64encode(file_content).decode('utf-8')
+def encode_image(file_content: bytes):
+    img_format = get_image_format(file_content)
+    if not img_format:
+        raise ValueError("无法识别的图片格式")
+    base64_encoded = base64.b64encode(file_content).decode('utf-8')
 
-        if img_format == 'png':
-            return f"data:image/png;base64,{base64_encoded}"
-        elif img_format in ['jpg', 'jpeg']:
-            return f"data:image/jpeg;base64,{base64_encoded}"
-        else:
-            raise ValueError(f"不支持的图片格式: {img_format}")
+    if img_format == 'png':
+        return f"data:image/png;base64,{base64_encoded}"
+    elif img_format in ['jpg', 'jpeg']:
+        return f"data:image/jpeg;base64,{base64_encoded}"
+    else:
+        raise ValueError(f"不支持的图片格式: {img_format}")
 
-async def get_doc_from_url(url):
-    filename = urllib.parse.unquote(url.split("/")[-1])
+async def get_image_from_url(url):
     transport = httpx.AsyncHTTPTransport(
         http2=True,
         verify=False,
@@ -586,19 +583,19 @@ async def get_doc_from_url(url):
                 url,
                 timeout=30.0
             )
-            with open(filename, 'wb') as f:
-                f.write(response.content)
+            response.raise_for_status()
+            return response.content
 
         except httpx.RequestError as e:
-            print(f"An error occurred while requesting {e.request.url!r}.")
-
-    return filename
+            logger.error(f"请求 URL 时出错 {e.request.url!r}: {e}")
+            raise HTTPException(status_code=400, detail=f"无法从 URL 获取内容: {url}")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"获取 URL 时发生 HTTP 错误 {e.request.url!r}: {e.response.status_code}")
+            raise HTTPException(status_code=e.response.status_code, detail=f"获取 URL 时出错: {url}")
 
 async def get_encode_image(image_url):
-    filename = await get_doc_from_url(image_url)
-    image_path = os.getcwd() + "/" + filename
-    base64_image = encode_image(image_path)
-    os.remove(image_path)
+    file_content = await get_image_from_url(image_url)
+    base64_image = encode_image(file_content)
     return base64_image
 
 # from PIL import Image
