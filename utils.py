@@ -21,7 +21,7 @@ def get_model_dict(provider):
         if type(model) == str:
             model_dict[model] = model
         if isinstance(model, dict):
-            model_dict.update({new: old for old, new in model.items()})
+            model_dict.update({str(new): old for old, new in model.items()})
     return model_dict
 
 class BaseAPI:
