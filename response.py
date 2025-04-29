@@ -327,7 +327,10 @@ async def fetch_azure_response_stream(client, url, headers, payload):
                         continue
 
                     if no_stream_content or content or sse_string:
-                        sse_string = await generate_sse_response(timestamp, safe_get(line, "model", default=None), content=no_stream_content or content)
+                        input_tokens = safe_get(line, "usage", "prompt_tokens", default=0)
+                        output_tokens = safe_get(line, "usage", "completion_tokens", default=0)
+                        total_tokens = safe_get(line, "usage", "total_tokens", default=0)
+                        sse_string = await generate_sse_response(timestamp, safe_get(line, "model", default=None), content=no_stream_content or content, total_tokens=total_tokens, prompt_tokens=input_tokens, completion_tokens=output_tokens)
                         yield sse_string
                     else:
                         if no_stream_content:

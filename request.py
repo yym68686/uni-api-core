@@ -995,6 +995,10 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
                     }
                 })
 
+    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
+        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
+            payload[key] = value
+
     return url, headers, payload
 
 def build_azure_endpoint(base_url, deployment_id, api_version="2025-01-01-preview"):
@@ -1084,6 +1088,10 @@ async def get_azure_payload(request, engine, provider, api_key=None):
     if provider.get("tools") == False or "o1" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
+
+    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
+        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
+            payload[key] = value
 
     return url, headers, payload
 
