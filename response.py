@@ -66,7 +66,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                 # print(line)
                 if line and '\"text\": \"' in line and is_finish == False:
                     try:
-                        json_data = json.loads( "{" + line + "}")
+                        json_data = json.loads( "{" + line.strip().rstrip(",") + "}")
                         content = json_data.get('text', '')
                         # content = content.replace("\n", "\n\n")
                         # if last_text_line == 0 and is_thinking:
@@ -142,7 +142,7 @@ async def fetch_vertex_claude_response_stream(client, url, headers, payload, mod
 
                 if line and '\"text\": \"' in line and is_finish == False:
                     try:
-                        json_data = json.loads( "{" + line + "}")
+                        json_data = json.loads( "{" + line.strip().rstrip(",") + "}")
                         content = json_data.get('text', '')
                         sse_string = await generate_sse_response(timestamp, model, content=content)
                         yield sse_string
