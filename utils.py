@@ -127,6 +127,9 @@ def get_engine(provider, endpoint=None, original_model=""):
         engine = "tts"
         stream = False
 
+    if "stream" in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}):
+        stream = safe_get(provider, "preferences", "post_body_parameter_overrides", "stream")
+
     return engine, stream
 
 from httpx_socks import AsyncProxyTransport
