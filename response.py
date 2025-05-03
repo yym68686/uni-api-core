@@ -35,6 +35,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
         promptTokenCount = 0
         candidatesTokenCount = 0
         totalTokenCount = 0
+        parts_json = ""
         # line_index = 0
         # last_text_line = 0
         # if "thinking" in model:
@@ -63,24 +64,25 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                     json_data = parse_json_safely( "{" + line + "}")
                     totalTokenCount = json_data.get('totalTokenCount', 0)
 
-                # print(line)
-                if line and '\"text\": \"' in line and is_finish == False:
+                if (line and '"parts": [' in line or parts_json != "") and is_finish == False:
+                    parts_json += line
+                if parts_json != "" and line and '],' == line.strip():
+                    parts_json =  "{" + parts_json.strip().rstrip(",") + "}"
                     try:
-                        json_data = json.loads( "{" + line.strip().rstrip(",") + "}")
-                        content = json_data.get('text', '')
-                        # content = content.replace("\n", "\n\n")
-                        # if last_text_line == 0 and is_thinking:
-                        #     content = "> " + content.lstrip()
-                        # if is_thinking:
-                        #     content = content.replace("\n", "\n> ")
-                        # if last_text_line == line_index - 3:
-                        #     is_thinking = False
-                        #     content = "\n\n\n" + content.lstrip()
-                        sse_string = await generate_sse_response(timestamp, model, content=content)
-                        yield sse_string
+                        json_data = json.loads(parts_json)
+
+                        content = safe_get(json_data, "parts", 0, "text", default="")
+
+                        is_thinking = safe_get(json_data, "parts", 0, "thought", default=False)
+                        if is_thinking:
+                            sse_string = await generate_sse_response(timestamp, model, reasoning_content=content)
+                            yield sse_string
+                        else:
+                            sse_string = await generate_sse_response(timestamp, model, content=content)
+                            yield sse_string
                     except json.JSONDecodeError:
-                        logger.error(f"无法解析JSON: {line}")
-                    # last_text_line = line_index
+                        logger.error(f"无法解析JSON: {parts_json}")
+                    parts_json = ""
 
                 if line and ('\"functionCall\": {' in line or revicing_function_call):
                     revicing_function_call = True
