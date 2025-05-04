@@ -70,7 +70,7 @@ def get_engine(provider, endpoint=None, original_model=""):
         engine = "gemini"
     elif parsed_url.netloc.rstrip('/').endswith('aiplatform.googleapis.com') or (parsed_url.netloc.rstrip('/').endswith('gateway.ai.cloudflare.com') and "google-vertex-ai" in parsed_url.path):
         engine = "vertex"
-    elif parsed_url.netloc.rstrip('/').endswith('openai.azure.com') or parsed_url.netloc.rstrip('/').endswith('services.ai.azure.com'):
+    elif parsed_url.netloc.rstrip('/').endswith('azure.com'):
         engine = "azure"
     elif parsed_url.netloc == 'api.cloudflare.com':
         engine = "cloudflare"

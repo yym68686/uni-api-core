@@ -941,10 +941,6 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
 
-    # if "models.inference.ai.azure.com" in url:
-    #     payload["stream"] = False
-    #     payload.pop("stream_options", None)
-
     if "api.x.ai" in url:
         payload.pop("stream_options", None)
         payload.pop("presence_penalty", None)
