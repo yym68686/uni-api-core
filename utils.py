@@ -487,9 +487,17 @@ async def generate_sse_response(timestamp, model, content=None, tools_id=None, f
 
     return sse_response
 
-async def generate_no_stream_response(timestamp, model, content=None, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=0, prompt_tokens=0, completion_tokens=0):
+async def generate_no_stream_response(timestamp, model, content=None, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=0, prompt_tokens=0, completion_tokens=0, reasoning_content=None):
     random.seed(timestamp)
     random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=29))
+    message = {
+        "role": role,
+        "content": content,
+        "refusal": None
+    }
+    if reasoning_content:
+        message["reasoning_content"] = reasoning_content
+
     sample_data = {
         "id": f"chatcmpl-{random_str}",
         "object": "chat.completion",
@@ -498,11 +506,7 @@ async def generate_no_stream_response(timestamp, model, content=None, tools_id=N
         "choices": [
             {
                 "index": 0,
-                "message": {
-                    "role": role,
-                    "content": content,
-                    "refusal": None
-                },
+                "message": message,
                 "logprobs": None,
                 "finish_reason": "stop"
             }

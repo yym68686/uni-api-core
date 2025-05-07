@@ -532,11 +532,16 @@ async def fetch_response(client, url, headers, payload, engine, model):
             parsed_data = response_json
         # print("parsed_data", json.dumps(parsed_data, indent=4, ensure_ascii=False))
         content = ""
+        reasoning_content = ""
         for item in parsed_data:
             chunk = safe_get(item, "candidates", 0, "content", "parts", 0, "text")
+            is_think = safe_get(item, "candidates", 0, "content", "parts", 0, "thought", default=False)
             # logger.info(f"chunk: {repr(chunk)}")
             if chunk:
-                content += chunk
+                if is_think:
+                    reasoning_content += chunk
+                else:
+                    content += chunk
 
         usage_metadata = safe_get(parsed_data, -1, "usageMetadata")
         prompt_tokens = usage_metadata.get("promptTokenCount", 0)
@@ -554,7 +559,7 @@ async def fetch_response(client, url, headers, payload, engine, model):
         function_call_content = safe_get(parsed_data, -1, "candidates", 0, "content", "parts", 0, "functionCall", "args", default=None)
 
         timestamp = int(datetime.timestamp(datetime.now()))
-        yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=function_call_name, function_call_content=function_call_content, role=role, total_tokens=total_tokens, prompt_tokens=prompt_tokens, completion_tokens=candidates_tokens)
+        yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=function_call_name, function_call_content=function_call_content, role=role, total_tokens=total_tokens, prompt_tokens=prompt_tokens, completion_tokens=candidates_tokens, reasoning_content=reasoning_content)
 
     elif engine == "claude":
         response_json = response.json()
