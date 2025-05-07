@@ -544,9 +544,9 @@ async def fetch_response(client, url, headers, payload, engine, model):
                     content += chunk
 
         usage_metadata = safe_get(parsed_data, -1, "usageMetadata")
-        prompt_tokens = usage_metadata.get("promptTokenCount", 0)
-        candidates_tokens = usage_metadata.get("candidatesTokenCount", 0)
-        total_tokens = usage_metadata.get("totalTokenCount", 0)
+        prompt_tokens = safe_get(usage_metadata, "promptTokenCount", default=0)
+        candidates_tokens = safe_get(usage_metadata, "candidatesTokenCount", default=0)
+        total_tokens = safe_get(usage_metadata, "totalTokenCount", default=0)
 
         role = safe_get(parsed_data, -1, "candidates", 0, "content", "role")
         if role == "model":
