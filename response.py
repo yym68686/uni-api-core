@@ -67,7 +67,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                 if (line and '"parts": [' in line or parts_json != "") and is_finish == False:
                     parts_json += line
                 if parts_json != "" and line and '],' == line.strip():
-                    parts_json =  "{" + parts_json.strip().rstrip(",") + "}"
+                    parts_json =  "{" + parts_json.strip().rstrip(",} ]}") + "}]}"
                     try:
                         json_data = json.loads(parts_json)
 
