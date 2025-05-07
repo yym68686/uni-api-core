@@ -527,6 +527,8 @@ async def fetch_response(client, url, headers, payload, engine, model):
             parsed_data = ast.literal_eval(str(response_json))
         elif isinstance(response_json, list):
             parsed_data = response_json
+        elif isinstance(response_json, dict):
+            parsed_data = [response_json]
         else:
             logger.error(f"error fetch_response: Unknown response_json type: {type(response_json)}")
             parsed_data = response_json

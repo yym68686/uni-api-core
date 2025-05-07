@@ -31,7 +31,10 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
 
-    gemini_stream = "streamGenerateContent"
+    if request.stream:
+        gemini_stream = "streamGenerateContent"
+    else:
+        gemini_stream = "generateContent"
     url = provider['base_url']
     parsed_url = urllib.parse.urlparse(url)
     if "/v1beta" in parsed_url.path:
@@ -295,7 +298,10 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
     if provider.get("project_id"):
         project_id = provider.get("project_id")
 
-    gemini_stream = "streamGenerateContent"
+    if request.stream:
+        gemini_stream = "streamGenerateContent"
+    else:
+        gemini_stream = "generateContent"
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
     search_tool = None
