@@ -322,6 +322,9 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             MODEL_ID=original_model,
             stream=gemini_stream
         )
+    elif api_key[2] == ".":
+        url = f"https://aiplatform.googleapis.com/v1/publishers/google/models/{original_model}:{gemini_stream}?key={api_key}"
+        headers.pop("Authorization", None)
     else:
         url = "https://{LOCATION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(
             LOCATION=await location.next(),
