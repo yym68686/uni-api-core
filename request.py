@@ -459,10 +459,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["max_output_tokens"] = 8192
 
     if request.model.endswith("-search"):
-        if "tools" not in payload:
-            payload["tools"] = [search_tool]
-        else:
-            payload["tools"].append(search_tool)
+        payload["tools"] = [search_tool]
 
     return url, headers, payload
 
