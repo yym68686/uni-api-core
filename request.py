@@ -20,6 +20,8 @@ from .utils import (
     get_image_message,
 )
 
+gemini_max_token_65k_models = ["gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking", "gemini-2.5-flash"]
+
 async def get_gemini_payload(request, engine, provider, api_key=None):
     import re
 
@@ -196,16 +198,17 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             elif field == "temperature":
                 generation_config["temperature"] = value
             elif field == "max_tokens":
+                if value > 65536:
+                    value = 65536
                 generation_config["maxOutputTokens"] = value
             elif field == "top_p":
                 generation_config["topP"] = value
             else:
                 payload[field] = value
 
-    max_token_65k_models = ["gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking", "gemini-2.5-flash"]
     payload["generationConfig"] = generation_config
     if "maxOutputTokens" not in generation_config:
-        if any(pro_model in original_model for pro_model in max_token_65k_models):
+        if any(pro_model in original_model for pro_model in gemini_max_token_65k_models):
             payload["generationConfig"]["maxOutputTokens"] = 65536
         else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
@@ -226,10 +229,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
 
     # 检测search标签
     if request.model.endswith("-search"):
-        if "tools" not in payload:
-            payload["tools"] = [{"googleSearch": {}}]
-        else:
-            payload["tools"].append({"googleSearch": {}})
+        payload["tools"] = [{"googleSearch": {}}]
 
     return url, headers, payload
 
@@ -447,15 +447,19 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             elif field == "temperature":
                 generation_config["temperature"] = value
             elif field == "max_tokens":
+                if value > 65535:
+                    value = 65535
                 generation_config["max_output_tokens"] = value
             elif field == "top_p":
                 generation_config["top_p"] = value
             else:
                 payload[field] = value
 
-    if generation_config:
-        payload["generationConfig"] = generation_config
-        if "max_output_tokens" not in generation_config:
+    payload["generationConfig"] = generation_config
+    if "max_output_tokens" not in generation_config:
+        if any(pro_model in original_model for pro_model in gemini_max_token_65k_models):
+            payload["generationConfig"]["max_output_tokens"] = 65535
+        else:
             payload["generationConfig"]["max_output_tokens"] = 8192
 
     if request.model.endswith("-search"):
