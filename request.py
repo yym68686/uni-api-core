@@ -104,8 +104,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             content[0]["text"] = re.sub(r"_+", "_", content[0]["text"])
             systemInstruction = {"parts": content}
 
-    off_models = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5", "gemini-2.5-pro"]
-    if any(off_model in original_model for off_model in off_models):
+    if any(off_model in original_model for off_model in gemini_max_token_65k_models):
         safety_settings = "OFF"
     else:
         safety_settings = "BLOCK_NONE"
@@ -390,27 +389,35 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         elif msg.role == "system":
             systemInstruction = {"parts": content}
 
+    if any(off_model in original_model for off_model in gemini_max_token_65k_models):
+        safety_settings = "OFF"
+    else:
+        safety_settings = "BLOCK_NONE"
 
     payload = {
         "contents": messages,
-        # "safetySettings": [
-        #     {
-        #         "category": "HARM_CATEGORY_HARASSMENT",
-        #         "threshold": "BLOCK_NONE"
-        #     },
-        #     {
-        #         "category": "HARM_CATEGORY_HATE_SPEECH",
-        #         "threshold": "BLOCK_NONE"
-        #     },
-        #     {
-        #         "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-        #         "threshold": "BLOCK_NONE"
-        #     },
-        #     {
-        #         "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-        #         "threshold": "BLOCK_NONE"
-        #     }
-        # ]
+        "safetySettings": [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": safety_settings
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": safety_settings
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": safety_settings
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": safety_settings
+            },
+            {
+                "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+                "threshold": "BLOCK_NONE"
+            },
+        ]
     }
     if systemInstruction:
         payload["system_instruction"] = systemInstruction
