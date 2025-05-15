@@ -1,12 +1,10 @@
 import re
 import io
-import os
 import ast
 import json
 import httpx
 import base64
 import asyncio
-import urllib.parse
 from time import time
 from PIL import Image
 from fastapi import HTTPException
@@ -18,7 +16,7 @@ from .log_config import logger
 def get_model_dict(provider):
     model_dict = {}
     for model in provider['model']:
-        if type(model) == str:
+        if isinstance(model, str):
             model_dict[model] = model
         if isinstance(model, dict):
             model_dict.update({str(new): old for old, new in model.items()})
