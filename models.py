@@ -45,13 +45,6 @@ class ContentItem(BaseModel):
 class Message(BaseModel):
     role: str
     name: Optional[str] = None
-    arguments: Optional[str] = None
-    content: Optional[Union[str, List[ContentItem]]] = None
-    tool_calls: Optional[List[ToolCall]] = None
-
-class Message(BaseModel):
-    role: str
-    name: Optional[str] = None
     content: Optional[Union[str, List[ContentItem]]] = None
     tool_calls: Optional[List[ToolCall]] = None
     tool_call_id: Optional[str] = None
