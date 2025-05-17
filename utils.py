@@ -16,6 +16,7 @@ from .log_config import logger
 def get_model_dict(provider):
     model_dict = {}
     if "model" not in provider:
+        logger.error(f"Error: model is not set in provider: {provider}")
         return model_dict
     for model in provider['model']:
         if isinstance(model, str):
