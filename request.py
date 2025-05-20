@@ -306,7 +306,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
     search_tool = None
 
     # https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-0-flash?hl=zh-cn
-    pro_models = ["gemini-2.5"]
+    pro_models = ["gemini-2.5", "gemini-2.0"]
     if any(pro_model in original_model for pro_model in pro_models):
         location = gemini2
         search_tool = {"googleSearch": {}}
