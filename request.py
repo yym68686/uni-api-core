@@ -230,9 +230,17 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 # 如果转换为整数失败，忽略思考预算设置
                 pass
 
-    # 检测search标签
-    if request.model.endswith("-search"):
-        payload["tools"] = [{"googleSearch": {}}]
+    # # 检测search标签
+    # if request.model.endswith("-search"):
+    #     payload["tools"] = [{"googleSearch": {}}]
+
+    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
+        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
+            if key == request.model:
+                for k, v in value.items():
+                    payload[k] = v
+            elif all(_model not in request.model for _model in ["gemini", "gpt", "claude"]):
+                payload[key] = value
 
     return url, headers, payload
 
@@ -307,16 +315,16 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         gemini_stream = "generateContent"
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
-    search_tool = None
+    # search_tool = None
 
     # https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-0-flash?hl=zh-cn
     pro_models = ["gemini-2.5", "gemini-2.0"]
     if any(pro_model in original_model for pro_model in pro_models):
         location = gemini2
-        search_tool = {"googleSearch": {}}
+        # search_tool = {"googleSearch": {}}
     else:
         location = gemini1
-        search_tool = {"googleSearchRetrieval": {}}
+        # search_tool = {"googleSearchRetrieval": {}}
 
     if "google-vertex-ai" in provider.get("base_url", ""):
         url = provider.get("base_url").rstrip('/') + "/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(
@@ -491,8 +499,16 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                 # 如果转换为整数失败，忽略思考预算设置
                 pass
 
-    if request.model.endswith("-search"):
-        payload["tools"] = [search_tool]
+    # if request.model.endswith("-search"):
+    #     payload["tools"] = [search_tool]
+
+    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
+        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
+            if key == request.model:
+                for k, v in value.items():
+                    payload[k] = v
+            elif all(_model not in request.model for _model in ["gemini", "gpt", "claude"]):
+                payload[key] = value
 
     return url, headers, payload
 
@@ -1032,7 +1048,11 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
 
     if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
         for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
-            payload[key] = value
+            if key == request.model:
+                for k, v in value.items():
+                    payload[k] = v
+            elif all(_model not in request.model for _model in ["gemini", "gpt", "claude"]):
+                payload[key] = value
 
     return url, headers, payload
 
@@ -1126,7 +1146,11 @@ async def get_azure_payload(request, engine, provider, api_key=None):
 
     if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
         for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
-            payload[key] = value
+            if key == request.model:
+                for k, v in value.items():
+                    payload[k] = v
+            elif all(_model not in request.model for _model in ["gemini", "gpt", "claude"]):
+                payload[key] = value
 
     return url, headers, payload
 
