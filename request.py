@@ -1,3 +1,4 @@
+import re
 import json
 import httpx
 import base64
@@ -211,19 +212,23 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
 
-    # 从请求模型名中检测思考预算设置
-    m = re.match(r".*-think-(-?\d+)", request.model)
-    if m:
-        try:
-            val = int(m.group(1))
-            if val < 0:
-                val = 0
-            elif val > 24576:
-                val = 24576
-            payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": val}
-        except ValueError:
-            # 如果转换为整数失败，忽略思考预算设置
-            pass
+    if "gemini-2.5" in original_model:
+        payload["generationConfig"]["thinkingConfig"] = {
+            "includeThoughts": True,
+        }
+        # 从请求模型名中检测思考预算设置
+        m = re.match(r".*-think-(-?\d+)", request.model)
+        if m:
+            try:
+                val = int(m.group(1))
+                if val < 0:
+                    val = 0
+                elif val > 24576:
+                    val = 24576
+                payload["generationConfig"]["thinkingConfig"]["thinkingBudget"] = val
+            except ValueError:
+                # 如果转换为整数失败，忽略思考预算设置
+                pass
 
     # 检测search标签
     if request.model.endswith("-search"):
@@ -467,6 +472,24 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["max_output_tokens"] = 65535
         else:
             payload["generationConfig"]["max_output_tokens"] = 8192
+
+    if "gemini-2.5" in original_model:
+        payload["generationConfig"]["thinkingConfig"] = {
+            "includeThoughts": True,
+        }
+        # 从请求模型名中检测思考预算设置
+        m = re.match(r".*-think-(-?\d+)", request.model)
+        if m:
+            try:
+                val = int(m.group(1))
+                if val < 0:
+                    val = 0
+                elif val > 24576:
+                    val = 24576
+                payload["generationConfig"]["thinkingConfig"]["thinkingBudget"] = val
+            except ValueError:
+                # 如果转换为整数失败，忽略思考预算设置
+                pass
 
     if request.model.endswith("-search"):
         payload["tools"] = [search_tool]
