@@ -48,6 +48,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
 
     messages = []
     systemInstruction = None
+    system_prompt = ""
     function_arguments = None
     for msg in request.messages:
         if msg.role == "assistant":
@@ -102,7 +103,8 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             messages.append({"role": msg.role, "parts": content})
         elif msg.role == "system":
             content[0]["text"] = re.sub(r"_+", "_", content[0]["text"])
-            systemInstruction = {"parts": content}
+            system_prompt = system_prompt + "\n\n" + content[0]["text"]
+    systemInstruction = {"parts": [{"text": system_prompt}]}
 
     if any(off_model in original_model for off_model in gemini_max_token_65k_models):
         safety_settings = "OFF"
@@ -346,6 +348,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
 
     messages = []
     systemInstruction = None
+    system_prompt = ""
     function_arguments = None
     for msg in request.messages:
         if msg.role == "assistant":
@@ -399,7 +402,8 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         elif msg.role != "system":
             messages.append({"role": msg.role, "parts": content})
         elif msg.role == "system":
-            systemInstruction = {"parts": content}
+            system_prompt = system_prompt + "\n\n" + content[0]["text"]
+    systemInstruction = {"parts": [{"text": system_prompt}]}
 
     if any(off_model in original_model for off_model in gemini_max_token_65k_models):
         safety_settings = "OFF"

@@ -535,15 +535,25 @@ async def fetch_response(client, url, headers, payload, engine, model):
         # print("parsed_data", json.dumps(parsed_data, indent=4, ensure_ascii=False))
         content = ""
         reasoning_content = ""
-        for item in parsed_data:
-            chunk = safe_get(item, "candidates", 0, "content", "parts", 0, "text")
-            is_think = safe_get(item, "candidates", 0, "content", "parts", 0, "thought", default=False)
+        parts_list = safe_get(parsed_data, 0, "candidates", 0, "content", "parts", default=[])
+        for item in parts_list:
+            chunk = safe_get(item, "text")
+            is_think = safe_get(item, "thought", default=False)
             # logger.info(f"chunk: {repr(chunk)}")
             if chunk:
                 if is_think:
                     reasoning_content += chunk
                 else:
                     content += chunk
+        # for item in parsed_data:
+        #     chunk = safe_get(item, "candidates", 0, "content", "parts", 0, "text")
+        #     is_think = safe_get(item, "candidates", 0, "content", "parts", 0, "thought", default=False)
+        #     # logger.info(f"chunk: {repr(chunk)}")
+        #     if chunk:
+        #         if is_think:
+        #             reasoning_content += chunk
+        #         else:
+        #             content += chunk
 
         usage_metadata = safe_get(parsed_data, -1, "usageMetadata")
         prompt_tokens = safe_get(usage_metadata, "promptTokenCount", default=0)
