@@ -1221,6 +1221,14 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
         if field not in miss_fields and value is not None:
             payload[field] = value
 
+    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
+        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
+            if key == request.model:
+                for k, v in value.items():
+                    payload[k] = v
+            elif all(_model not in request.model for _model in ["gemini", "gpt", "claude"]):
+                payload[key] = value
+
     return url, headers, payload
 
 async def get_cohere_payload(request, engine, provider, api_key=None):
