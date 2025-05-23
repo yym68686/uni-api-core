@@ -935,6 +935,9 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         headers['Authorization'] = f"Bearer {api_key}"
 
     url = provider['base_url']
+    if "openrouter.ai" in url:
+        headers['HTTP-Referer'] = "https://github.com/yym68686/uni-api"
+        headers['X-Title'] = "Uni API"
 
     messages = []
     for msg in request.messages:
@@ -1168,6 +1171,9 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
         headers['Authorization'] = f"Bearer {api_key}"
 
     url = provider['base_url']
+    if "openrouter.ai" in url:
+        headers['HTTP-Referer'] = "https://github.com/yym68686/uni-api"
+        headers['X-Title'] = "Uni API"
 
     messages = []
     for msg in request.messages:
