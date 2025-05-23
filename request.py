@@ -1483,9 +1483,13 @@ async def get_claude_payload(request, engine, provider, api_key=None):
             message_index = message_index + 1
 
     if "claude-3-7-sonnet" in original_model:
-        max_tokens = 20000
+        max_tokens = 128000
     elif "claude-3-5-sonnet" in original_model:
         max_tokens = 8192
+    elif "claude-sonnet-4" in original_model:
+        max_tokens = 64000
+    elif "claude-opus-4" in original_model:
+        max_tokens = 32000
     else:
         max_tokens = 4096
 
