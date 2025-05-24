@@ -1560,7 +1560,7 @@ async def get_claude_payload(request, engine, provider, api_key=None):
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
 
-    if "think" in request.model:
+    if "think" in request.model.lower():
         payload["thinking"] = {
             "budget_tokens": 4096,
             "type": "enabled"
@@ -1585,6 +1585,14 @@ async def get_claude_payload(request, engine, provider, api_key=None):
         payload.pop("top_p", None)
         payload.pop("top_k", None)
     # print("payload", json.dumps(payload, indent=2, ensure_ascii=False))
+
+    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
+        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
+            if key == request.model:
+                for k, v in value.items():
+                    payload[k] = v
+            elif all(_model not in request.model.lower() for _model in ["gemini", "gpt", "claude"]):
+                payload[key] = value
 
     return url, headers, payload
 
