@@ -1510,9 +1510,10 @@ async def get_claude_payload(request, engine, provider, api_key=None):
     payload = {
         "model": original_model,
         "messages": messages,
-        "system": system_prompt or "You are Claude, a large language model trained by Anthropic.",
         "max_tokens": max_tokens,
     }
+    if system_prompt:
+        payload["system"] = system_prompt
 
     if request.max_tokens:
         payload["max_tokens"] = int(request.max_tokens)
