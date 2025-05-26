@@ -54,6 +54,8 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                 if line and '\"finishReason\": \"' in line:
                     if "stop" not in line.lower():
                         logger.error(f"finishReason: {line}")
+                    sse_string = await generate_sse_response(timestamp, model, stop="stop")
+                    yield sse_string
                     is_finish = True
                 if is_finish and '\"promptTokenCount\": ' in line:
                     json_data = parse_json_safely( "{" + line + "}")

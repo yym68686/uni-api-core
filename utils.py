@@ -449,7 +449,7 @@ end_of_line = "\n\n"
 
 import random
 import string
-async def generate_sse_response(timestamp, model, content=None, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=0, prompt_tokens=0, completion_tokens=0, reasoning_content=None):
+async def generate_sse_response(timestamp, model, content=None, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=0, prompt_tokens=0, completion_tokens=0, reasoning_content=None, stop=None):
     random.seed(timestamp)
     random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=29))
 
@@ -484,6 +484,10 @@ async def generate_sse_response(timestamp, model, content=None, tools_id=None, f
         total_tokens = prompt_tokens + completion_tokens
         sample_data["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": total_tokens}
         sample_data["choices"] = []
+    if stop:
+        sample_data["choices"][0]["delta"] = {}
+        sample_data["choices"][0]["finish_reason"] = stop
+
     json_data = json.dumps(sample_data, ensure_ascii=False)
     # print("json_data", json.dumps(sample_data, indent=4, ensure_ascii=False))
 
