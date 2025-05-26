@@ -4,7 +4,7 @@ import httpx
 import base64
 import urllib.parse
 
-from .models import RequestModel
+from .models import RequestModel, Message
 from .utils import (
     c3s,
     c3o,
@@ -50,7 +50,12 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     systemInstruction = None
     system_prompt = ""
     function_arguments = None
-    for msg in request.messages:
+
+    try:
+        request_messages = [Message(role="user", content=request.prompt)]
+    except:
+        request_messages = request.messages
+    for msg in request_messages:
         if msg.role == "assistant":
             msg.role = "model"
         tool_calls = None
@@ -104,9 +109,10 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         elif msg.role == "system":
             content[0]["text"] = re.sub(r"_+", "_", content[0]["text"])
             system_prompt = system_prompt + "\n\n" + content[0]["text"]
-    systemInstruction = {"parts": [{"text": system_prompt}]}
+    if system_prompt.strip():
+        systemInstruction = {"parts": [{"text": system_prompt}]}
 
-    if any(off_model in original_model for off_model in gemini_max_token_65k_models):
+    if any(off_model in original_model for off_model in gemini_max_token_65k_models) or original_model == "gemini-2.0-flash-preview-image-generation":
         safety_settings = "OFF"
     else:
         safety_settings = "BLOCK_NONE"
@@ -160,6 +166,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         'top_logprobs',
         'response_format',
         'stream_options',
+        'prompt',
     ]
     generation_config = {}
 
@@ -214,6 +221,12 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
 
+        if original_model == "gemini-2.0-flash-preview-image-generation":
+            payload["generationConfig"]["response_modalities"] = [
+                "Text",
+                "Image",
+            ]
+
     if "gemini-2.5" in original_model:
         payload["generationConfig"]["thinkingConfig"] = {
             "includeThoughts": True,
@@ -241,7 +254,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             if key == request.model:
                 for k, v in value.items():
                     payload[k] = v
-            elif all(_model not in request.model.lower() for _model in ["gemini", "gpt", "claude"]):
+            elif all(_model not in request.model.lower() for _model in ["gemini", "gpt", "claude", "deepseek"]) and "-" not in key:
                 payload[key] = value
 
     return url, headers, payload

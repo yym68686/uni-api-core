@@ -112,7 +112,7 @@ def get_engine(provider, endpoint=None, original_model=""):
     if provider.get("engine"):
         engine = provider["engine"]
 
-    if endpoint == "/v1/images/generations" or "stable-diffusion" in original_model:
+    if engine != "gemini" and (endpoint == "/v1/images/generations" or "stable-diffusion" in original_model):
         engine = "dalle"
         stream = False
 
@@ -467,7 +467,7 @@ async def generate_sse_response(timestamp, model, content=None, tools_id=None, f
                 "index": 0,
                 "delta": delta_content,
                 "logprobs": None,
-                "finish_reason": None if content else "stop"
+                "finish_reason": None if content or reasoning_content else "stop"
             }
         ],
         "usage": None,
@@ -485,13 +485,14 @@ async def generate_sse_response(timestamp, model, content=None, tools_id=None, f
         sample_data["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": total_tokens}
         sample_data["choices"] = []
     json_data = json.dumps(sample_data, ensure_ascii=False)
+    # print("json_data", json.dumps(sample_data, indent=4, ensure_ascii=False))
 
     # 构建SSE响应
     sse_response = f"data: {json_data}" + end_of_line
 
     return sse_response
 
-async def generate_no_stream_response(timestamp, model, content=None, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=0, prompt_tokens=0, completion_tokens=0, reasoning_content=None):
+async def generate_no_stream_response(timestamp, model, content=None, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=0, prompt_tokens=0, completion_tokens=0, reasoning_content=None, image_base64=None):
     random.seed(timestamp)
     random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=29))
     message = {
@@ -554,11 +555,25 @@ async def generate_no_stream_response(timestamp, model, content=None, tools_id=N
             "system_fingerprint": "fp_4691090a87"
         }
 
+    if image_base64:
+        sample_data = {
+            "created": timestamp,
+            "data": [{
+                "b64_json": image_base64
+            }],
+            # "usage": {
+            #     "total_tokens": 100,
+            #     "input_tokens": 50,
+            #     "output_tokens": 50,
+            # }
+        }
+
     if total_tokens:
         total_tokens = prompt_tokens + completion_tokens
         sample_data["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": total_tokens}
 
     json_data = json.dumps(sample_data, ensure_ascii=False)
+    # print("json_data", json.dumps(sample_data, indent=4, ensure_ascii=False))
 
     return json_data
 

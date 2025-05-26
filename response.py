@@ -36,6 +36,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
         candidatesTokenCount = 0
         totalTokenCount = 0
         parts_json = ""
+        image_base64 = ""
         # line_index = 0
         # last_text_line = 0
         # if "thinking" in model:
@@ -67,17 +68,25 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                 if (line and '"parts": [' in line or parts_json != "") and is_finish == False:
                     parts_json += line
                 if parts_json != "" and line and '],' == line.strip():
-                    tmp_parts_json =  "{" + parts_json.split("}        ]      },")[0].strip().rstrip("}], ").replace("\n", "\\n").lstrip("{") + "}]}"
+                    # tmp_parts_json =  "{" + parts_json.split("}        ]      },")[0].strip().rstrip("}], ").replace("\n", "\\n").lstrip("{") + "}]}"
+                    tmp_parts_json =  "{" + parts_json.split("}        ]      },")[0].strip().rstrip("}], ").replace("\n", "\\n").lstrip("{")
+                    if "inlineData" in tmp_parts_json:
+                        tmp_parts_json = tmp_parts_json + "}}]}"
+                    else:
+                        tmp_parts_json = tmp_parts_json + "}]}"
                     try:
                         json_data = json.loads(tmp_parts_json)
 
                         content = safe_get(json_data, "parts", 0, "text", default="")
+                        b64_json = safe_get(json_data, "parts", 0, "inlineData", "data", default="")
+                        if b64_json:
+                            image_base64 = b64_json
 
                         is_thinking = safe_get(json_data, "parts", 0, "thought", default=False)
                         if is_thinking:
                             sse_string = await generate_sse_response(timestamp, model, reasoning_content=content)
                             yield sse_string
-                        else:
+                        elif not image_base64:
                             sse_string = await generate_sse_response(timestamp, model, content=content)
                             yield sse_string
                     except json.JSONDecodeError:
@@ -92,6 +101,10 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                         continue
 
                     function_full_response += line
+
+        if image_base64:
+            yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=totalTokenCount, prompt_tokens=promptTokenCount, completion_tokens=candidatesTokenCount, image_base64=image_base64)
+            return
 
         if need_function_call:
             function_call = json.loads(function_full_response)
@@ -535,9 +548,13 @@ async def fetch_response(client, url, headers, payload, engine, model):
         # print("parsed_data", json.dumps(parsed_data, indent=4, ensure_ascii=False))
         content = ""
         reasoning_content = ""
+        image_base64 = ""
         parts_list = safe_get(parsed_data, 0, "candidates", 0, "content", "parts", default=[])
         for item in parts_list:
             chunk = safe_get(item, "text")
+            b64_json = safe_get(item, "inlineData", "data", default="")
+            if b64_json:
+                image_base64 = b64_json
             is_think = safe_get(item, "thought", default=False)
             # logger.info(f"chunk: {repr(chunk)}")
             if chunk:
@@ -571,7 +588,7 @@ async def fetch_response(client, url, headers, payload, engine, model):
         function_call_content = safe_get(parsed_data, -1, "candidates", 0, "content", "parts", 0, "functionCall", "args", default=None)
 
         timestamp = int(datetime.timestamp(datetime.now()))
-        yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=function_call_name, function_call_content=function_call_content, role=role, total_tokens=total_tokens, prompt_tokens=prompt_tokens, completion_tokens=candidates_tokens, reasoning_content=reasoning_content)
+        yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=function_call_name, function_call_content=function_call_content, role=role, total_tokens=total_tokens, prompt_tokens=prompt_tokens, completion_tokens=candidates_tokens, reasoning_content=reasoning_content, image_base64=image_base64)
 
     elif engine == "claude":
         response_json = response.json()
