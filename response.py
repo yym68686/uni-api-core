@@ -54,8 +54,6 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                 if line and '\"finishReason\": \"' in line:
                     if "stop" not in line.lower():
                         logger.error(f"finishReason: {line}")
-                    sse_string = await generate_sse_response(timestamp, model, stop="stop")
-                    yield sse_string
                     is_finish = True
                 if is_finish and '\"promptTokenCount\": ' in line:
                     json_data = parse_json_safely( "{" + line + "}")
@@ -116,6 +114,9 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
             function_full_response = json.dumps(function_call["functionCall"]["args"])
             sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=None, function_call_content=function_full_response)
             yield sse_string
+
+        sse_string = await generate_sse_response(timestamp, model, stop="stop")
+        yield sse_string
 
         sse_string = await generate_sse_response(timestamp, model, None, None, None, None, None, totalTokenCount, promptTokenCount, candidatesTokenCount)
         yield sse_string
