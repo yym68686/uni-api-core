@@ -340,6 +340,9 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
     else:
         location = gemini1
 
+    if "gemini-2.5-pro-exp-03-25" == original_model:
+        location = gemini2_5_pro_exp
+
     if "google-vertex-ai" in provider.get("base_url", ""):
         url = provider.get("base_url").rstrip('/') + "/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(
             LOCATION=await location.next(),
