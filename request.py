@@ -12,6 +12,7 @@ from .utils import (
     c35s,
     gemini1,
     gemini2,
+    gemini2_5_pro_exp,
     BaseAPI,
     safe_get,
     get_engine,
@@ -336,10 +337,11 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
     pro_models = ["gemini-2.5", "gemini-2.0"]
     if any(pro_model in original_model for pro_model in pro_models):
         location = gemini2
-        # search_tool = {"googleSearch": {}}
     else:
         location = gemini1
-        # search_tool = {"googleSearchRetrieval": {}}
+
+    if "gemini-2.5-pro-exp-03-25" == original_model:
+        location = gemini2_5_pro_exp
 
     if "google-vertex-ai" in provider.get("base_url", ""):
         url = provider.get("base_url").rstrip('/') + "/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(

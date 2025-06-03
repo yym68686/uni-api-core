@@ -437,6 +437,7 @@ c3o = ThreadSafeCircularList(["us-east5"])
 c3h = ThreadSafeCircularList(["us-east5", "us-central1", "europe-west1", "europe-west4"])
 gemini1 = ThreadSafeCircularList(["us-central1", "us-east4", "us-west1", "us-west4", "europe-west1", "europe-west2"])
 gemini2 = ThreadSafeCircularList(["us-central1"])
+gemini2_5_pro_exp = ThreadSafeCircularList(["global"])
 
 
 
