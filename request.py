@@ -113,7 +113,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     if system_prompt.strip():
         systemInstruction = {"parts": [{"text": system_prompt}]}
 
-    if any(off_model in original_model for off_model in gemini_max_token_65k_models) or original_model == "gemini-2.0-flash-preview-image-generation":
+    if any(off_model in original_model for off_model in gemini_max_token_65k_models) or original_model.endswith("-image-generation"):
         safety_settings = "OFF"
     else:
         safety_settings = "BLOCK_NONE"
@@ -168,6 +168,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         'response_format',
         'stream_options',
         'prompt',
+        'size',
     ]
     generation_config = {}
 
@@ -222,7 +223,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
 
-        if original_model == "gemini-2.0-flash-preview-image-generation":
+        if original_model.endswith("-image-generation"):
             payload["generationConfig"]["response_modalities"] = [
                 "Text",
                 "Image",
@@ -473,6 +474,8 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         'logprobs',
         'top_logprobs',
         'stream_options',
+        'prompt',
+        'size',
     ]
     generation_config = {}
 
