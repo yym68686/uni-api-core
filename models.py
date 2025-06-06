@@ -91,6 +91,8 @@ class RequestModel(BaseRequest):
     include_usage: Optional[bool] = None
     temperature: Optional[float] = 0.5
     top_p: Optional[float] = 1.0
+    top_k: Optional[int] = None
+    min_p: Optional[float] = None
     max_tokens: Optional[int] = None
     max_completion_tokens: Optional[int] = None
     presence_penalty: Optional[float] = 0.0
