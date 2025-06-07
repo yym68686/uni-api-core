@@ -352,7 +352,11 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             stream=gemini_stream
         )
     elif api_key is not None and api_key[2] == ".":
-        url = f"https://aiplatform.googleapis.com/v1/publishers/google/models/{original_model}:{gemini_stream}?key={api_key}"
+        if provider.get("project_id"):
+            project_id = provider.get("project_id")
+            url = f"https://aiplatform.googleapis.com/v1/projects/{project_id}/locations/global/publishers/google/models/{original_model}:{gemini_stream}?key={api_key}"
+        else:
+            url = f"https://aiplatform.googleapis.com/v1/publishers/google/models/{original_model}:{gemini_stream}?key={api_key}"
         headers.pop("Authorization", None)
     elif "gemini-2.5-pro-exp-03-25" == original_model:
         url = "https://aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(
@@ -426,7 +430,8 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             messages.append({"role": msg.role, "parts": content})
         elif msg.role == "system":
             system_prompt = system_prompt + "\n\n" + content[0]["text"]
-    systemInstruction = {"parts": [{"text": system_prompt}]}
+    if system_prompt.strip():
+        systemInstruction = {"parts": [{"text": system_prompt}]}
 
     if any(off_model in original_model for off_model in gemini_max_token_65k_models):
         safety_settings = "OFF"
