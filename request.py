@@ -353,7 +353,11 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         )
     elif api_key is not None and api_key[2] == ".":
         if provider.get("project_id") and "gemini-2.5-pro-preview-06-05" == original_model:
-            project_id = provider.get("project_id")
+            if isinstance(provider.get("project_id"), str):
+                project_id = provider.get("project_id")
+            else:
+                api_key_index = provider.get("api").index(api_key)
+                project_id = provider.get("project_id")[api_key_index]
             url = f"https://aiplatform.googleapis.com/v1/projects/{project_id}/locations/global/publishers/google/models/{original_model}:{gemini_stream}?key={api_key}"
         else:
             url = f"https://aiplatform.googleapis.com/v1/publishers/google/models/{original_model}:{gemini_stream}?key={api_key}"
