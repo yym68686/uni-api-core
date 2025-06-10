@@ -86,7 +86,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                         if is_thinking:
                             sse_string = await generate_sse_response(timestamp, model, reasoning_content=content)
                             yield sse_string
-                        elif not image_base64:
+                        elif not image_base64 and content:
                             sse_string = await generate_sse_response(timestamp, model, content=content)
                             yield sse_string
                     except json.JSONDecodeError:
