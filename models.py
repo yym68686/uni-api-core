@@ -202,7 +202,6 @@ class UnifiedRequest(BaseModel):
                 values["data"] = ModerationRequest(**values)
                 values["data"].request_type = "moderation"
             else:
-                print("request error:", json.dumps(values, indent=4, ensure_ascii=False))
                 raise ValueError("无法确定请求类型")
         return values
 
