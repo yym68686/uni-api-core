@@ -75,6 +75,8 @@ def get_engine(provider, endpoint=None, original_model=""):
         engine = "vertex"
     elif parsed_url.netloc.rstrip('/').endswith('azure.com'):
         engine = "azure"
+    elif parsed_url.netloc.rstrip('/').endswith('azuredatabricks.net'):
+        engine = "azure-databricks"
     elif parsed_url.netloc == 'api.cloudflare.com':
         engine = "cloudflare"
     elif parsed_url.netloc == 'api.anthropic.com' or parsed_url.path.endswith("v1/messages"):
@@ -674,7 +676,7 @@ async def get_image_message(base64_image, engine = None):
         base64_image = f"data:image/png;base64,{png_base64}"
         image_type = "image/png"
 
-    if "gpt" == engine or "openrouter" == engine or "azure" == engine:
+    if "gpt" == engine or "openrouter" == engine or "azure" == engine or "azure-databricks" == engine:
         return {
             "type": "image_url",
             "image_url": {
@@ -702,7 +704,9 @@ async def get_image_message(base64_image, engine = None):
     raise ValueError("Unknown engine")
 
 async def get_text_message(message, engine = None):
-    if "gpt" == engine or "claude" == engine or "openrouter" == engine or "vertex-claude" == engine or "azure" == engine or "aws" == engine:
+    if "gpt" == engine or "claude" == engine or "openrouter" == engine or \
+    "vertex-claude" == engine or "azure" == engine or "aws" == engine or \
+    "azure-databricks" == engine:
         return {"type": "text", "text": message}
     if "gemini" == engine or "vertex-gemini" == engine:
         return {"text": message}

@@ -640,14 +640,11 @@ async def fetch_response_stream(client, url, headers, payload, engine, model):
     elif engine == "aws":
         async for chunk in fetch_aws_response_stream(client, url, headers, payload, model):
             yield chunk
-    elif engine == "gpt":
+    elif engine == "gpt" or engine == "openrouter" or engine == "azure-databricks":
         async for chunk in fetch_gpt_response_stream(client, url, headers, payload):
             yield chunk
     elif engine == "azure":
         async for chunk in fetch_azure_response_stream(client, url, headers, payload):
-            yield chunk
-    elif engine == "openrouter":
-        async for chunk in fetch_gpt_response_stream(client, url, headers, payload):
             yield chunk
     elif engine == "cloudflare":
         async for chunk in fetch_cloudflare_response_stream(client, url, headers, payload, model):
