@@ -1246,10 +1246,25 @@ async def get_azure_databricks_payload(request, engine, provider, api_key=None):
         else:
             messages.append({"role": msg.role, "content": content})
 
+    if "claude-3-7-sonnet" in original_model:
+        max_tokens = 128000
+    elif "claude-3-5-sonnet" in original_model:
+        max_tokens = 8192
+    elif "claude-sonnet-4" in original_model:
+        max_tokens = 64000
+    elif "claude-opus-4" in original_model:
+        max_tokens = 32000
+    else:
+        max_tokens = 4096
+
     payload = {
         "model": original_model,
         "messages": messages,
+        "max_tokens": max_tokens,
     }
+
+    if request.max_tokens:
+        payload["max_tokens"] = int(request.max_tokens)
 
     miss_fields = [
         'model',
@@ -1266,6 +1281,31 @@ async def get_azure_databricks_payload(request, engine, provider, api_key=None):
     if provider.get("tools") == False or "o1" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
+
+    if "think" in request.model.lower():
+        payload["thinking"] = {
+            "budget_tokens": 4096,
+            "type": "enabled"
+        }
+        payload["temperature"] = 1
+        payload.pop("top_p", None)
+        payload.pop("top_k", None)
+        if request.model.split("-")[-1].isdigit():
+            think_tokens = int(request.model.split("-")[-1])
+            if think_tokens < max_tokens:
+                payload["thinking"] = {
+                    "budget_tokens": think_tokens,
+                    "type": "enabled"
+                }
+
+    if request.thinking:
+        payload["thinking"] = {
+            "budget_tokens": request.thinking.budget_tokens,
+            "type": request.thinking.type
+        }
+        payload["temperature"] = 1
+        payload.pop("top_p", None)
+        payload.pop("top_k", None)
 
     if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
         for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():

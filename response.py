@@ -270,8 +270,15 @@ async def fetch_gpt_response_stream(client, url, headers, payload):
 
                     no_stream_content = safe_get(line, "choices", 0, "message", "content", default=None)
                     openrouter_reasoning = safe_get(line, "choices", 0, "delta", "reasoning", default="")
+                    azure_databricks_claude_summary_content = safe_get(line, "choices", 0, "delta", "content", 0, "summary", 0, "text", default="")
+                    azure_databricks_claude_signature_content = safe_get(line, "choices", 0, "delta", "content", 0, "summary", 0, "signature", default="")
                     # print("openrouter_reasoning", repr(openrouter_reasoning), openrouter_reasoning.endswith("\\\\"), openrouter_reasoning.endswith("\\"))
-                    if openrouter_reasoning:
+                    if azure_databricks_claude_signature_content:
+                        pass
+                    elif azure_databricks_claude_summary_content:
+                        sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=azure_databricks_claude_summary_content)
+                        yield sse_string
+                    elif openrouter_reasoning:
                         if openrouter_reasoning.endswith("\\"):
                             enter_buffer += openrouter_reasoning
                             continue
