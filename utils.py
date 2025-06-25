@@ -484,7 +484,6 @@ async def generate_sse_response(timestamp, model, content=None, tools_id=None, f
     if role:
         sample_data["choices"][0]["delta"] = {"role": role, "content": ""}
     if total_tokens:
-        total_tokens = prompt_tokens + completion_tokens
         sample_data["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": total_tokens}
         sample_data["choices"] = []
     if stop:
@@ -576,7 +575,6 @@ async def generate_no_stream_response(timestamp, model, content=None, tools_id=N
         }
 
     if total_tokens:
-        total_tokens = prompt_tokens + completion_tokens
         sample_data["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": total_tokens}
 
     json_data = json.dumps(sample_data, ensure_ascii=False)
@@ -738,7 +736,7 @@ def parse_json_safely(json_str):
             return json.loads(json_str, strict=False)
         except json.JSONDecodeError as e:
             # 两种方法都失败，抛出异常
-            raise Exception(f"无法解析JSON字符串: {e}")
+            raise Exception(f"无法解析JSON字符串: {e}, {json_str}")
 
 if __name__ == "__main__":
     provider = {

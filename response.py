@@ -49,6 +49,30 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
                 # line_index += 1
+                if line.startswith("data: "):
+                    json_line = line.lstrip("data: ").strip()
+                    response_json = json.loads(json_line)
+                    json_data = safe_get(response_json, "candidates", 0, "content", default=None)
+                    finishReason = safe_get(response_json, "candidates", 0 , "finishReason", default=None)
+                    if finishReason:
+                        promptTokenCount = safe_get(response_json, "usageMetadata", "promptTokenCount", default=0)
+                        candidatesTokenCount = safe_get(response_json, "usageMetadata", "candidatesTokenCount", default=0)
+                        totalTokenCount = safe_get(response_json, "usageMetadata", "totalTokenCount", default=0)
+
+                    content = safe_get(json_data, "parts", 0, "text", default="")
+                    b64_json = safe_get(json_data, "parts", 0, "inlineData", "data", default="")
+                    if b64_json:
+                        image_base64 = b64_json
+
+                    is_thinking = safe_get(json_data, "parts", 0, "thought", default=False)
+                    if is_thinking:
+                        sse_string = await generate_sse_response(timestamp, model, reasoning_content=content)
+                        yield sse_string
+                    elif not image_base64 and content:
+                        sse_string = await generate_sse_response(timestamp, model, content=content)
+                        yield sse_string
+
+                    continue
 
                 # https://ai.google.dev/api/generate-content?hl=zh-cn#FinishReason
                 if line and '\"finishReason\": \"' in line:
