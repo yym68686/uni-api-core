@@ -105,6 +105,7 @@ class RequestModel(BaseRequest):
     response_format: Optional[ResponseFormat] = None
     thinking: Optional[Thinking] = None
     stream_options: Optional[StreamOptions] = None
+    chat_template_kwargs: Optional[Dict[str, Any]] = None
 
     def get_last_text_message(self) -> Optional[str]:
         for message in reversed(self.messages):
