@@ -240,6 +240,10 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 val = int(m.group(1))
                 if val < 0:
                     val = 0
+                elif val > 32768 and "gemini-2.5-pro" in original_model:
+                    val = 32768
+                elif val < 128 and "gemini-2.5-pro" in original_model:
+                    val = 128
                 elif val > 24576:
                     val = 24576
                 payload["generationConfig"]["thinkingConfig"]["thinkingBudget"] = val
@@ -532,6 +536,10 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                 val = int(m.group(1))
                 if val < 0:
                     val = 0
+                elif val > 32768 and "gemini-2.5-pro" in original_model:
+                    val = 32768
+                elif val < 128 and "gemini-2.5-pro" in original_model:
+                    val = 128
                 elif val > 24576:
                     val = 24576
                 payload["generationConfig"]["thinkingConfig"]["thinkingBudget"] = val
