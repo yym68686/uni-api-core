@@ -10,6 +10,7 @@ from .utils import (
     c3o,
     c3h,
     c35s,
+    c4,
     gemini1,
     gemini2,
     gemini2_5_pro_exp,
@@ -576,6 +577,8 @@ async def get_vertex_claude_payload(request, engine, provider, api_key=None):
         location = c35s
     elif "claude-3-opus" in original_model:
         location = c3o
+    elif "claude-sonnet-4" in original_model or "claude-opus-4" in original_model:
+        location = c4
     elif "claude-3-sonnet" in original_model:
         location = c3s
     elif "claude-3-haiku" in original_model:
@@ -797,23 +800,6 @@ async def get_aws_payload(request, engine, provider, api_key=None):
     HOST = f"bedrock-runtime.{AWS_REGION}.amazonaws.com"
     # url = f"{base_url}/model/{original_model}/invoke"
     url = f"{base_url}/model/{original_model}/invoke-with-response-stream"
-
-    # if "claude-3-5-sonnet" in original_model or "claude-3-7-sonnet" in original_model:
-    #     location = c35s
-    # elif "claude-3-opus" in original_model:
-    #     location = c3o
-    # elif "claude-3-sonnet" in original_model:
-    #     location = c3s
-    # elif "claude-3-haiku" in original_model:
-    #     location = c3h
-
-    # claude_stream = "streamRawPredict"
-    # url = "https://{LOCATION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/anthropic/models/{MODEL}:{stream}".format(
-    #     LOCATION=await location.next(),
-    #     PROJECT_ID=project_id,
-    #     MODEL=original_model,
-    #     stream=claude_stream
-    # )
 
     messages = []
     system_prompt = None
