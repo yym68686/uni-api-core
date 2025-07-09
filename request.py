@@ -182,6 +182,9 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 processed_tools = []
                 for tool in value:
                     function_def = tool["function"]
+                    # gemini不支持parameters里面的additionalProperties字段，需要删除
+                    if safe_get(function_def, "parameters", "additionalProperties", default=None) is not None:
+                        del function_def["parameters"]["additionalProperties"]
                     # 处理 parameters.properties 中的 default 字段
                     if safe_get(function_def, "parameters", "properties", default=None):
                         for prop_value in function_def["parameters"]["properties"].values():
