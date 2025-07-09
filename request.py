@@ -185,16 +185,12 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                     # gemini不支持parameters里面的additionalProperties字段，需要删除
                     if safe_get(function_def, "parameters", "additionalProperties", default=None) is not None:
                         del function_def["parameters"]["additionalProperties"]
-                    if safe_get(function_def, "parameters", "properties", "noParams", default=None):
-                        del function_def["parameters"]["properties"]["noParams"]
-                        if safe_get(function_def, "parameters", "properties", default=None) is None:
-                            del function_def["parameters"]["properties"]
-                            if safe_get(function_def, "parameters", "required", default=None) is not None:
-                                del function_def["parameters"]["required"]
 
                     # 处理 parameters.properties 中的 default 字段
                     if safe_get(function_def, "parameters", "properties", default=None):
                         for prop_value in function_def["parameters"]["properties"].values():
+                            if "additionalProperties" in prop_value:
+                                del prop_value["additionalProperties"]
                             if "default" in prop_value:
                                 # 将 default 值添加到 description 中
                                 default_value = prop_value["default"]
