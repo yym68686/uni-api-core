@@ -70,9 +70,11 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
                     content.append(image_message)
-        else:
+        elif msg.content:
             content = [{"text": msg.content}]
             tool_calls = msg.tool_calls
+        elif msg.content is None:
+            continue
 
         if tool_calls:
             tool_call = tool_calls[0]
