@@ -28,6 +28,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
             yield error_message
             return
         buffer = ""
+        cache_buffer = ""
         revicing_function_call = False
         function_full_response = "{"
         need_function_call = False
@@ -45,6 +46,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
         #     is_thinking = False
         async for chunk in response.aiter_text():
             buffer += chunk
+            cache_buffer += chunk
 
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
@@ -139,8 +141,12 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
             sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=None, function_call_content=function_full_response)
             yield sse_string
 
-        sse_string = await generate_sse_response(timestamp, model, stop="stop")
-        yield sse_string
+        if cache_buffer == "[]":
+            sse_string = await generate_sse_response(timestamp, model, stop="PROHIBITED_CONTENT")
+            yield sse_string
+        else:
+            sse_string = await generate_sse_response(timestamp, model, stop="stop")
+            yield sse_string
 
         sse_string = await generate_sse_response(timestamp, model, None, None, None, None, None, totalTokenCount, promptTokenCount, candidatesTokenCount)
         yield sse_string
