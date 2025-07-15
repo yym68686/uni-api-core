@@ -256,8 +256,6 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 elif val > 24576:
                     val = 24576
                 payload["generationConfig"]["thinkingConfig"]["thinkingBudget"] = val
-                if val == 0:
-                    payload["generationConfig"].pop("thinkingConfig", None)
             except ValueError:
                 # 如果转换为整数失败，忽略思考预算设置
                 pass
@@ -554,8 +552,6 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                 elif val > 24576:
                     val = 24576
                 payload["generationConfig"]["thinkingConfig"]["thinkingBudget"] = val
-                if val == 0:
-                    payload["generationConfig"].pop("thinkingConfig", None)
             except ValueError:
                 # 如果转换为整数失败，忽略思考预算设置
                 pass
