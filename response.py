@@ -141,7 +141,13 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
             sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=None, function_call_content=function_full_response)
             yield sse_string
 
-        if cache_buffer == "[]":
+        cache_buffer_json = {}
+        try:
+            cache_buffer_json = json.loads(cache_buffer)
+        except json.JSONDecodeError:
+            cache_buffer_json = {}
+
+        if cache_buffer == "[]" or safe_get(cache_buffer_json, 0, "promptFeedback", "blockReason") == "PROHIBITED_CONTENT":
             sse_string = await generate_sse_response(timestamp, model, stop="PROHIBITED_CONTENT")
             yield sse_string
         else:
