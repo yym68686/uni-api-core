@@ -440,8 +440,23 @@ c4 = ThreadSafeCircularList(["us-east5", "us-central1", "europe-west4", "asia-so
 c3h = ThreadSafeCircularList(["us-east5", "us-central1", "europe-west1", "europe-west4"])
 gemini1 = ThreadSafeCircularList(["us-central1", "us-east4", "us-west1", "us-west4", "europe-west1", "europe-west2"])
 gemini2 = ThreadSafeCircularList(["us-central1"])
-gemini2_5_pro_exp = ThreadSafeCircularList(["global"])
-
+# gemini2_5_pro_exp = ThreadSafeCircularList(["global"])
+gemini2_5_pro_exp = ThreadSafeCircularList([
+  "us-central1",
+  "us-east1",
+  "us-east4",
+  "us-east5",
+  "us-south1",
+  "us-west1",
+  "us-west4",
+  "europe-central2",
+  "europe-north1",
+  "europe-southwest1",
+  "europe-west1",
+  "europe-west4",
+  "europe-west8",
+  "europe-west9"
+])
 
 
 # end_of_line = "\n\r\n"

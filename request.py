@@ -254,7 +254,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                         budget = 32768
                     else: # 128 <= val <= 32768
                         budget = val
-                
+
                 # gemini-2.5-flash-lite: [0] or [512, 24576]
                 elif "gemini-2.5-flash-lite" in original_model:
                     if val > 0 and val < 512:
@@ -270,7 +270,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                         budget = 24576
                     else: # Includes 0 and valid range, and clamps invalid negatives
                         budget = val if val >= 0 else 0
-                
+
                 payload["generationConfig"]["thinkingConfig"] = {
                     "includeThoughts": True,
                     "thinkingBudget": budget
@@ -372,15 +372,11 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
     # search_tool = None
 
     # https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-0-flash?hl=zh-cn
-    pro_models = ["gemini-2.5", "gemini-2.0"]
+    pro_models = ["gemini-2.5"]
     if any(pro_model in original_model for pro_model in pro_models):
-        location = gemini2
+        location = gemini2_5_pro_exp
     else:
         location = gemini1
-
-    if "gemini-2.5-flash-lite-preview-06-17" == original_model or \
-    "gemini-2.5-pro-preview-06-05" == original_model:
-        location = gemini2_5_pro_exp
 
     if "google-vertex-ai" in provider.get("base_url", ""):
         url = provider.get("base_url").rstrip('/') + "/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(
@@ -390,24 +386,8 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             stream=gemini_stream
         )
     elif api_key is not None and api_key[2] == ".":
-        if provider.get("project_id") and "gemini-2.5-pro-preview-06-05" == original_model:
-            if isinstance(provider.get("project_id"), list):
-                api_key_index = provider.get("api").index(api_key)
-                project_id = provider.get("project_id")[api_key_index]
-            else:
-                project_id = provider.get("project_id")
-            url = f"https://aiplatform.googleapis.com/v1/projects/{project_id}/locations/global/publishers/google/models/{original_model}:{gemini_stream}?key={api_key}"
-        else:
-            url = f"https://aiplatform.googleapis.com/v1/publishers/google/models/{original_model}:{gemini_stream}?key={api_key}"
+        url = f"https://aiplatform.googleapis.com/v1/publishers/google/models/{original_model}:{gemini_stream}?key={api_key}"
         headers.pop("Authorization", None)
-    elif "gemini-2.5-flash-lite-preview-06-17" == original_model or \
-    "gemini-2.5-pro-preview-06-05" == original_model:
-        url = "https://aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(
-            LOCATION=await location.next(),
-            PROJECT_ID=project_id,
-            MODEL_ID=original_model,
-            stream=gemini_stream
-        )
     else:
         url = "https://{LOCATION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(
             LOCATION=await location.next(),
@@ -573,7 +553,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                         budget = 32768
                     else: # 128 <= val <= 32768
                         budget = val
-                
+
                 # gemini-2.5-flash-lite: [0] or [512, 24576]
                 elif "gemini-2.5-flash-lite" in original_model:
                     if val > 0 and val < 512:
@@ -589,7 +569,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                         budget = 24576
                     else: # Includes 0 and valid range, and clamps invalid negatives
                         budget = val if val >= 0 else 0
-                
+
                 payload["generationConfig"]["thinkingConfig"] = {
                     "includeThoughts": True,
                     "thinkingBudget": budget
