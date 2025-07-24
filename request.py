@@ -239,26 +239,50 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             ]
 
     if "gemini-2.5" in original_model:
-        payload["generationConfig"]["thinkingConfig"] = {
-            "includeThoughts": True,
-        }
+        generation_config = payload.get("generationConfig", {})
         # 从请求模型名中检测思考预算设置
         m = re.match(r".*-think-(-?\d+)", request.model)
         if m:
             try:
                 val = int(m.group(1))
-                if val > 32768 and "gemini-2.5-pro" in original_model:
-                    val = 32768
-                elif val < 128 and "gemini-2.5-pro" in original_model:
-                    val = 128
-                elif val <= 0:
-                    val = 0
-                elif val > 24576:
-                    val = 24576
-                payload["generationConfig"]["thinkingConfig"]["thinkingBudget"] = val
+                budget = None
+                # gemini-2.5-pro: [128, 32768]
+                if "gemini-2.5-pro" in original_model:
+                    if val < 128:
+                        budget = 128
+                    elif val > 32768:
+                        budget = 32768
+                    else: # 128 <= val <= 32768
+                        budget = val
+                
+                # gemini-2.5-flash-lite: [0] or [512, 24576]
+                elif "gemini-2.5-flash-lite" in original_model:
+                    if val > 0 and val < 512:
+                        budget = 512
+                    elif val > 24576:
+                        budget = 24576
+                    else: # Includes 0 and valid range, and clamps invalid negatives
+                        budget = val if val >= 0 else 0
+
+                # gemini-2.5-flash (and other gemini-2.5 models as a fallback): [0, 24576]
+                else:
+                    if val > 24576:
+                        budget = 24576
+                    else: # Includes 0 and valid range, and clamps invalid negatives
+                        budget = val if val >= 0 else 0
+                
+                payload["generationConfig"]["thinkingConfig"] = {
+                    "includeThoughts": True,
+                    "thinkingBudget": budget
+                }
             except ValueError:
                 # 如果转换为整数失败，忽略思考预算设置
                 pass
+        else:
+            payload["generationConfig"]["thinkingConfig"] = {
+                "includeThoughts": True,
+            }
+        payload["generationConfig"] = generation_config
 
     # # 检测search标签
     # if request.model.endswith("-search"):
@@ -535,26 +559,48 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["max_output_tokens"] = 8192
 
     if "gemini-2.5" in original_model:
-        payload["generationConfig"]["thinkingConfig"] = {
-            "includeThoughts": True,
-        }
         # 从请求模型名中检测思考预算设置
         m = re.match(r".*-think-(-?\d+)", request.model)
         if m:
             try:
                 val = int(m.group(1))
-                if val > 32768 and "gemini-2.5-pro" in original_model:
-                    val = 32768
-                elif val < 128 and "gemini-2.5-pro" in original_model:
-                    val = 128
-                elif val <= 0:
-                    val = 0
-                elif val > 24576:
-                    val = 24576
-                payload["generationConfig"]["thinkingConfig"]["thinkingBudget"] = val
+                budget = None
+                # gemini-2.5-pro: [128, 32768]
+                if "gemini-2.5-pro" in original_model:
+                    if val < 128:
+                        budget = 128
+                    elif val > 32768:
+                        budget = 32768
+                    else: # 128 <= val <= 32768
+                        budget = val
+                
+                # gemini-2.5-flash-lite: [0] or [512, 24576]
+                elif "gemini-2.5-flash-lite" in original_model:
+                    if val > 0 and val < 512:
+                        budget = 512
+                    elif val > 24576:
+                        budget = 24576
+                    else: # Includes 0 and valid range, and clamps invalid negatives
+                        budget = val if val >= 0 else 0
+
+                # gemini-2.5-flash (and other gemini-2.5 models as a fallback): [0, 24576]
+                else:
+                    if val > 24576:
+                        budget = 24576
+                    else: # Includes 0 and valid range, and clamps invalid negatives
+                        budget = val if val >= 0 else 0
+                
+                payload["generationConfig"]["thinkingConfig"] = {
+                    "includeThoughts": True,
+                    "thinkingBudget": budget
+                }
             except ValueError:
                 # 如果转换为整数失败，忽略思考预算设置
                 pass
+        else:
+            payload["generationConfig"]["thinkingConfig"] = {
+                "includeThoughts": True,
+            }
 
     # if request.model.endswith("-search"):
     #     payload["tools"] = [search_tool]
