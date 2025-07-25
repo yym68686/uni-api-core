@@ -49,7 +49,10 @@ class BaseAPI:
         self.v1_models: str = urlunparse(parsed_url[:2] + (before_v1 + "models",) + ("",) * 3)
         self.chat_url: str = urlunparse(parsed_url[:2] + (before_v1 + "chat/completions",) + ("",) * 3)
         self.image_url: str = urlunparse(parsed_url[:2] + (before_v1 + "images/generations",) + ("",) * 3)
-        self.audio_transcriptions: str = urlunparse(parsed_url[:2] + (before_v1 + "audio/transcriptions",) + ("",) * 3)
+        if parsed_url.hostname == "dashscope.aliyuncs.com":
+            self.audio_transcriptions: str = urlunparse(parsed_url[:2] + ("/api/v1/services/aigc/multimodal-generation/generation",) + ("",) * 3)
+        else:
+            self.audio_transcriptions: str = urlunparse(parsed_url[:2] + (before_v1 + "audio/transcriptions",) + ("",) * 3)
         self.moderations: str = urlunparse(parsed_url[:2] + (before_v1 + "moderations",) + ("",) * 3)
         self.embeddings: str = urlunparse(parsed_url[:2] + (before_v1 + "embeddings",) + ("",) * 3)
         if parsed_url.hostname == "api.minimaxi.com":

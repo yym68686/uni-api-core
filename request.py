@@ -3,6 +3,8 @@ import json
 import httpx
 import base64
 import urllib.parse
+from io import IOBase
+from typing import Tuple
 
 from .models import RequestModel, Message
 from .utils import (
@@ -1793,21 +1795,98 @@ async def get_dalle_payload(request, engine, provider, api_key=None):
 
     return url, headers, payload
 
+async def get_upload_certificate(client: httpx.AsyncClient, api_key: str, model: str) -> dict:
+    """第一步：获取文件上传凭证"""
+    # print("步骤 1: 正在获取上传凭证...")
+    headers = {"Authorization": f"Bearer {api_key}"}
+    params = {"action": "getPolicy", "model": model}
+    try:
+        response = await client.get("https://dashscope.aliyuncs.com/api/v1/uploads", headers=headers, params=params)
+        response.raise_for_status()  # 如果请求失败则抛出异常
+        cert_data = response.json()
+        # print("凭证获取成功。")
+        return cert_data.get("data")
+    except httpx.HTTPStatusError as e:
+        print(f"获取凭证失败: HTTP {e.response.status_code}")
+        print(f"响应内容: {e.response.text}")
+        return None
+    except Exception as e:
+        print(f"获取凭证时发生未知错误: {e}")
+        return None
+
+from mimetypes import guess_type
+
+async def upload_file_to_oss(client: httpx.AsyncClient, certificate: dict, file: Tuple[str, IOBase, str]) -> str:
+    """第二步：使用凭证将文件内容上传到OSS"""
+    upload_host = certificate.get("upload_host")
+    upload_dir = certificate.get("upload_dir")
+    object_key = f"{upload_dir}/{file[0]}"
+
+    form_data = {
+        "key": object_key,
+        "policy": certificate.get("policy"),
+        "OSSAccessKeyId": certificate.get("oss_access_key_id"),
+        "signature": certificate.get("signature"),
+        "success_action_status": "200",
+        "x-oss-object-acl": certificate.get("x_oss_object_acl"),
+        "x-oss-forbid-overwrite": certificate.get("x_oss_forbid_overwrite"),
+    }
+
+    files = {"file": file}
+
+    try:
+        response = await client.post(upload_host, data=form_data, files=files, timeout=3600)
+        response.raise_for_status()
+        # print("文件上传成功！")
+        oss_url = f"oss://{object_key}"
+        # print(f"文件OSS URL: {oss_url}")
+        return oss_url
+    except httpx.HTTPStatusError as e:
+        print(f"上传文件失败: HTTP {e.response.status_code}")
+        print(f"响应内容: {e.response.text}")
+        return None
+    except Exception as e:
+        print(f"上传文件时发生未知错误: {e}")
+        return None
+
 async def get_whisper_payload(request, engine, provider, api_key=None):
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
-    headers = {
-        # "Content-Type": "multipart/form-data",
-    }
+    headers = {}
     if api_key:
         headers['Authorization'] = f"Bearer {api_key}"
     url = provider['base_url']
     url = BaseAPI(url).audio_transcriptions
 
-    payload = {
-        "model": original_model,
-        "file": request.file,
-    }
+    if "dashscope.aliyuncs.com" in url:
+        client = httpx.AsyncClient()
+        certificate = await get_upload_certificate(client, api_key, original_model)
+        if not certificate:
+            return
+
+        # 步骤 2: 上传文件
+        oss_url = await upload_file_to_oss(client, certificate, request.file)
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "X-DashScope-OssResourceResolve": "enable"
+        }
+        payload = {
+            "model": original_model,
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{"audio": oss_url}]
+                    }
+                ]
+            }
+        }
+    else:
+        payload = {
+            "model": original_model,
+            "file": request.file,
+        }
 
     if request.prompt:
         payload["prompt"] = request.prompt
