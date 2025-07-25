@@ -52,7 +52,10 @@ class BaseAPI:
         self.audio_transcriptions: str = urlunparse(parsed_url[:2] + (before_v1 + "audio/transcriptions",) + ("",) * 3)
         self.moderations: str = urlunparse(parsed_url[:2] + (before_v1 + "moderations",) + ("",) * 3)
         self.embeddings: str = urlunparse(parsed_url[:2] + (before_v1 + "embeddings",) + ("",) * 3)
-        self.audio_speech: str = urlunparse(parsed_url[:2] + (before_v1 + "audio/speech",) + ("",) * 3)
+        if parsed_url.hostname == "api.minimaxi.com":
+            self.audio_speech: str = urlunparse(parsed_url[:2] + ("v1/t2a_v2",) + ("",) * 3)
+        else:
+            self.audio_speech: str = urlunparse(parsed_url[:2] + (before_v1 + "audio/speech",) + ("",) * 3)
 
         if parsed_url.hostname == "generativelanguage.googleapis.com":
             self.base_url = api_url

@@ -1886,11 +1886,20 @@ async def get_tts_payload(request, engine, provider, api_key=None):
     url = provider['base_url']
     url = BaseAPI(url).audio_speech
 
-    payload = {
-        "model": original_model,
-        "input": request.input,
-        "voice": request.voice,
-    }
+    if "api.minimaxi.com" in url:
+        payload = {
+            "model": original_model,
+            "text": request.input,
+            "voice_setting": {
+                "voice_id": request.voice
+            }
+        }
+    else:
+        payload = {
+            "model": original_model,
+            "input": request.input,
+            "voice": request.voice,
+        }
 
     if request.response_format:
         payload["response_format"] = request.response_format
