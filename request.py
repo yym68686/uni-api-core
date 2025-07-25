@@ -239,7 +239,6 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             ]
 
     if "gemini-2.5" in original_model:
-        generation_config = payload.get("generationConfig", {})
         # 从请求模型名中检测思考预算设置
         m = re.match(r".*-think-(-?\d+)", request.model)
         if m:
@@ -272,7 +271,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                         budget = val if val >= 0 else 0
 
                 payload["generationConfig"]["thinkingConfig"] = {
-                    "includeThoughts": True,
+                    "includeThoughts": True if budget else False,
                     "thinkingBudget": budget
                 }
             except ValueError:
@@ -282,11 +281,6 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["thinkingConfig"] = {
                 "includeThoughts": True,
             }
-        payload["generationConfig"] = generation_config
-
-    # # 检测search标签
-    # if request.model.endswith("-search"):
-    #     payload["tools"] = [{"googleSearch": {}}]
 
     if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
         for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
@@ -571,7 +565,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                         budget = val if val >= 0 else 0
 
                 payload["generationConfig"]["thinkingConfig"] = {
-                    "includeThoughts": True,
+                    "includeThoughts": True if budget else False,
                     "thinkingBudget": budget
                 }
             except ValueError:
@@ -581,9 +575,6 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["thinkingConfig"] = {
                 "includeThoughts": True,
             }
-
-    # if request.model.endswith("-search"):
-    #     payload["tools"] = [search_tool]
 
     if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
         for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
