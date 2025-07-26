@@ -666,7 +666,7 @@ async def fetch_response(client, url, headers, payload, engine, model):
 
         yield response_json
 
-    elif "dashscope.aliyuncs.com" in url:
+    elif "dashscope.aliyuncs.com" in url and "multimodal-generation" in url:
         response_json = response.json()
         content = safe_get(response_json, "output", "choices", 0, "message", "content", 0, default=None)
         yield content
