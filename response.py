@@ -20,6 +20,34 @@ async def check_response(response, error_log):
         return {"error": f"{error_log} HTTP Error", "status_code": response.status_code, "details": error_json}
     return None
 
+def gemini_json_poccess(response_str):
+    promptTokenCount = 0
+    candidatesTokenCount = 0
+    totalTokenCount = 0
+    image_base64 = None
+
+    response_json = json.loads(response_str)
+    json_data = safe_get(response_json, "candidates", 0, "content", default=None)
+    finishReason = safe_get(response_json, "candidates", 0 , "finishReason", default=None)
+    if finishReason:
+        promptTokenCount = safe_get(response_json, "usageMetadata", "promptTokenCount", default=0)
+        candidatesTokenCount = safe_get(response_json, "usageMetadata", "candidatesTokenCount", default=0)
+        totalTokenCount = safe_get(response_json, "usageMetadata", "totalTokenCount", default=0)
+
+    content = safe_get(json_data, "parts", 0, "text", default="")
+    b64_json = safe_get(json_data, "parts", 0, "inlineData", "data", default="")
+    if b64_json:
+        image_base64 = b64_json
+
+    is_thinking = safe_get(json_data, "parts", 0, "thought", default=False)
+
+    function_call_name = safe_get(json_data, "functionCall", "name", default=None)
+    function_full_response = json.dumps(safe_get(json_data, "functionCall", "args", default=""))
+
+    blockReason = safe_get(json_data, 0, "promptFeedback", "blockReason", default=None)
+
+    return is_thinking, content, image_base64, function_call_name, function_full_response, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount
+
 async def fetch_gemini_response_stream(client, url, headers, payload, model):
     timestamp = int(datetime.timestamp(datetime.now()))
     async with client.stream('POST', url, headers=headers, json=payload) as response:
@@ -28,131 +56,54 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
             yield error_message
             return
         buffer = ""
-        cache_buffer = ""
-        revicing_function_call = False
-        function_full_response = "{"
-        need_function_call = False
-        is_finish = False
         promptTokenCount = 0
         candidatesTokenCount = 0
         totalTokenCount = 0
         parts_json = ""
-        image_base64 = ""
-        # line_index = 0
-        # last_text_line = 0
-        # if "thinking" in model:
-        #     is_thinking = True
-        # else:
-        #     is_thinking = False
         async for chunk in response.aiter_text():
             buffer += chunk
             cache_buffer += chunk
 
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
-                # line_index += 1
                 if line.startswith("data: "):
-                    json_line = line.lstrip("data: ").strip()
-                    response_json = json.loads(json_line)
-                    json_data = safe_get(response_json, "candidates", 0, "content", default=None)
-                    finishReason = safe_get(response_json, "candidates", 0 , "finishReason", default=None)
-                    if finishReason:
-                        promptTokenCount = safe_get(response_json, "usageMetadata", "promptTokenCount", default=0)
-                        candidatesTokenCount = safe_get(response_json, "usageMetadata", "candidatesTokenCount", default=0)
-                        totalTokenCount = safe_get(response_json, "usageMetadata", "totalTokenCount", default=0)
-
-                    content = safe_get(json_data, "parts", 0, "text", default="")
-                    b64_json = safe_get(json_data, "parts", 0, "inlineData", "data", default="")
-                    if b64_json:
-                        image_base64 = b64_json
-
-                    is_thinking = safe_get(json_data, "parts", 0, "thought", default=False)
-                    if is_thinking:
-                        sse_string = await generate_sse_response(timestamp, model, reasoning_content=content)
-                        yield sse_string
-                    elif not image_base64 and content:
-                        sse_string = await generate_sse_response(timestamp, model, content=content)
-                        yield sse_string
-
-                    continue
-
-                # https://ai.google.dev/api/generate-content?hl=zh-cn#FinishReason
-                if line and '\"finishReason\": \"' in line:
-                    if "stop" not in line.lower():
-                        logger.error(f"finishReason: {line}")
-                    is_finish = True
-                if is_finish and '\"promptTokenCount\": ' in line:
-                    json_data = parse_json_safely( "{" + line + "}")
-                    promptTokenCount = json_data.get('promptTokenCount', 0)
-                if is_finish and '\"candidatesTokenCount\": ' in line:
-                    json_data = parse_json_safely( "{" + line + "}")
-                    candidatesTokenCount = json_data.get('candidatesTokenCount', 0)
-                if is_finish and '\"totalTokenCount\": ' in line:
-                    json_data = parse_json_safely( "{" + line + "}")
-                    totalTokenCount = json_data.get('totalTokenCount', 0)
-
-                if (line and '"parts": [' in line or parts_json != "") and is_finish == False:
+                    parts_json = line.lstrip("data: ").strip()
+                else:
                     parts_json += line
-                if parts_json != "" and line and '],' == line.strip():
-                    # tmp_parts_json =  "{" + parts_json.split("}        ]      },")[0].strip().rstrip("}], ").replace("\n", "\\n").lstrip("{") + "}]}"
-                    tmp_parts_json =  "{" + parts_json.split("}        ]      },")[0].strip().rstrip("}], ").replace("\n", "\\n").lstrip("{")
-                    if "inlineData" in tmp_parts_json:
-                        tmp_parts_json = tmp_parts_json + "}}]}"
-                    else:
-                        tmp_parts_json = tmp_parts_json + "}]}"
+                    parts_json = parts_json.lstrip("[,")
                     try:
-                        json_data = json.loads(tmp_parts_json)
-
-                        content = safe_get(json_data, "parts", 0, "text", default="")
-                        b64_json = safe_get(json_data, "parts", 0, "inlineData", "data", default="")
-                        if b64_json:
-                            image_base64 = b64_json
-
-                        is_thinking = safe_get(json_data, "parts", 0, "thought", default=False)
-                        if is_thinking:
-                            sse_string = await generate_sse_response(timestamp, model, reasoning_content=content)
-                            yield sse_string
-                        elif not image_base64 and content:
-                            sse_string = await generate_sse_response(timestamp, model, content=content)
-                            yield sse_string
+                        json.loads(parts_json)
                     except json.JSONDecodeError:
-                        logger.error(f"无法解析JSON: {parts_json}")
-                    parts_json = ""
-
-                if line and ('\"functionCall\": {' in line or revicing_function_call):
-                    revicing_function_call = True
-                    need_function_call = True
-                    if ']' in line:
-                        revicing_function_call = False
                         continue
 
-                    function_full_response += line
+                # https://ai.google.dev/api/generate-content?hl=zh-cn#FinishReason
+                is_thinking, content, image_base64, function_call_name, function_full_response, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = gemini_json_poccess(parts_json)
 
-        if image_base64:
-            yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=totalTokenCount, prompt_tokens=promptTokenCount, completion_tokens=candidatesTokenCount, image_base64=image_base64)
-            return
+                if is_thinking:
+                    sse_string = await generate_sse_response(timestamp, model, reasoning_content=content)
+                    yield sse_string
+                elif not image_base64 and content:
+                    sse_string = await generate_sse_response(timestamp, model, content=content)
+                    yield sse_string
 
-        if need_function_call:
-            function_call = json.loads(function_full_response)
-            function_call_name = function_call["functionCall"]["name"]
-            sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=function_call_name)
-            yield sse_string
-            function_full_response = json.dumps(function_call["functionCall"]["args"])
-            sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=None, function_call_content=function_full_response)
-            yield sse_string
+                if image_base64:
+                    yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=totalTokenCount, prompt_tokens=promptTokenCount, completion_tokens=candidatesTokenCount, image_base64=image_base64)
 
-        cache_buffer_json = {}
-        try:
-            cache_buffer_json = json.loads(cache_buffer)
-        except json.JSONDecodeError:
-            cache_buffer_json = {}
+                if function_call_name:
+                    sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=function_call_name)
+                    yield sse_string
+                if function_full_response:
+                    sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=None, function_call_content=function_full_response)
+                    yield sse_string
 
-        if cache_buffer == "[]" or safe_get(cache_buffer_json, 0, "promptFeedback", "blockReason") == "PROHIBITED_CONTENT":
-            sse_string = await generate_sse_response(timestamp, model, stop="PROHIBITED_CONTENT")
-            yield sse_string
-        else:
-            sse_string = await generate_sse_response(timestamp, model, stop="stop")
-            yield sse_string
+                if parts_json == "[]" or blockReason == "PROHIBITED_CONTENT":
+                    sse_string = await generate_sse_response(timestamp, model, stop="PROHIBITED_CONTENT")
+                    yield sse_string
+                else:
+                    sse_string = await generate_sse_response(timestamp, model, stop="stop")
+                    yield sse_string
+
+                parts_json = ""
 
         sse_string = await generate_sse_response(timestamp, model, None, None, None, None, None, totalTokenCount, promptTokenCount, candidatesTokenCount)
         yield sse_string

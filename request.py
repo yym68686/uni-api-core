@@ -74,9 +74,8 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                     content.append(image_message)
         elif msg.content:
             content = [{"text": msg.content}]
-            tool_calls = msg.tool_calls
         elif msg.content is None:
-            continue
+            tool_calls = msg.tool_calls
 
         if tool_calls:
             tool_call = tool_calls[0]
@@ -110,7 +109,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                     }]
                 }
             )
-        elif msg.role != "system":
+        elif msg.role != "system" and content:
             messages.append({"role": msg.role, "parts": content})
         elif msg.role == "system":
             content[0]["text"] = re.sub(r"_+", "_", content[0]["text"])
@@ -409,8 +408,9 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
                     content.append(image_message)
-        else:
+        elif msg.content:
             content = [{"text": msg.content}]
+        elif msg.content is None:
             tool_calls = msg.tool_calls
 
         if tool_calls:
@@ -445,7 +445,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                     }]
                 }
             )
-        elif msg.role != "system":
+        elif msg.role != "system" and content:
             messages.append({"role": msg.role, "parts": content})
         elif msg.role == "system":
             system_prompt = system_prompt + "\n\n" + content[0]["text"]
