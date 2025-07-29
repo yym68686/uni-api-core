@@ -62,7 +62,6 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
         parts_json = ""
         async for chunk in response.aiter_text():
             buffer += chunk
-            cache_buffer += chunk
 
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
