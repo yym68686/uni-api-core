@@ -47,7 +47,7 @@ def gemini_json_poccess(response_str):
 
     blockReason = safe_get(json_data, 0, "promptFeedback", "blockReason", default=None)
 
-    return is_thinking, content, image_base64, function_call_name, function_full_response, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount
+    return is_thinking, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount
 
 async def fetch_gemini_response_stream(client, url, headers, payload, model):
     timestamp = int(datetime.timestamp(datetime.now()))
@@ -77,7 +77,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                         continue
 
                 # https://ai.google.dev/api/generate-content?hl=zh-cn#FinishReason
-                is_thinking, content, image_base64, function_call_name, function_full_response, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = gemini_json_poccess(parts_json)
+                is_thinking, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = gemini_json_poccess(parts_json)
 
                 if is_thinking:
                     sse_string = await generate_sse_response(timestamp, model, reasoning_content=content)
@@ -99,9 +99,10 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                 if parts_json == "[]" or blockReason == "PROHIBITED_CONTENT":
                     sse_string = await generate_sse_response(timestamp, model, stop="PROHIBITED_CONTENT")
                     yield sse_string
-                else:
+                elif finishReason:
                     sse_string = await generate_sse_response(timestamp, model, stop="stop")
                     yield sse_string
+                    break
 
                 parts_json = ""
 
