@@ -42,7 +42,8 @@ def gemini_json_poccess(response_str):
     is_thinking = safe_get(json_data, "parts", 0, "thought", default=False)
 
     function_call_name = safe_get(json_data, "functionCall", "name", default=None)
-    function_full_response = json.dumps(safe_get(json_data, "functionCall", "args", default=""))
+    function_full_response = safe_get(json_data, "functionCall", "args", default="")
+    function_full_response = json.dumps(function_full_response) if function_full_response else None
 
     blockReason = safe_get(json_data, 0, "promptFeedback", "blockReason", default=None)
 
