@@ -40,6 +40,10 @@ def gemini_json_poccess(response_str):
         image_base64 = b64_json
 
     is_thinking = safe_get(json_data, "parts", 0, "thought", default=False)
+    if is_thinking and len(safe_get(json_data, "parts", default=[])) == 2 \
+    and safe_get(json_data, "parts", 1, "text", default=""):
+        reasoning_content = safe_get(json_data, "parts", 0, "text", default="")
+        content = safe_get(json_data, "parts", 1, "text", default="")
 
     function_call_name = safe_get(json_data, "functionCall", "name", default=None)
     function_full_response = safe_get(json_data, "functionCall", "args", default="")
@@ -47,7 +51,7 @@ def gemini_json_poccess(response_str):
 
     blockReason = safe_get(json_data, 0, "promptFeedback", "blockReason", default=None)
 
-    return is_thinking, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount
+    return is_thinking, reasoning_content, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount
 
 async def fetch_gemini_response_stream(client, url, headers, payload, model):
     timestamp = int(datetime.timestamp(datetime.now()))
@@ -63,6 +67,8 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
         parts_json = ""
         async for chunk in response.aiter_text():
             buffer += chunk
+            if buffer and "\n" not in buffer:
+                buffer += "\n"
 
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
@@ -77,12 +83,12 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                         continue
 
                 # https://ai.google.dev/api/generate-content?hl=zh-cn#FinishReason
-                is_thinking, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = gemini_json_poccess(parts_json)
+                is_thinking, reasoning_content, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = gemini_json_poccess(parts_json)
 
                 if is_thinking:
-                    sse_string = await generate_sse_response(timestamp, model, reasoning_content=content)
+                    sse_string = await generate_sse_response(timestamp, model, reasoning_content=reasoning_content)
                     yield sse_string
-                elif not image_base64 and content:
+                if not image_base64 and content:
                     sse_string = await generate_sse_response(timestamp, model, content=content)
                     yield sse_string
 
