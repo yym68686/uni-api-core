@@ -72,6 +72,11 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
                 line, buffer = buffer.split("\n", 1)
                 if line.startswith("data: "):
                     parts_json = line.lstrip("data: ").strip()
+                    try:
+                        json.loads(parts_json)
+                    except json.JSONDecodeError:
+                        logger.error(f"JSON decode error: {parts_json}")
+                        continue
                 else:
                     parts_json += line
                     parts_json = parts_json.lstrip("[,")
