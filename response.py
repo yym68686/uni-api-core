@@ -24,7 +24,6 @@ def gemini_json_poccess(response_str):
     promptTokenCount = 0
     candidatesTokenCount = 0
     totalTokenCount = 0
-    reasoning_content = None
     image_base64 = None
 
     response_json = json.loads(response_str)
@@ -35,15 +34,13 @@ def gemini_json_poccess(response_str):
         candidatesTokenCount = safe_get(response_json, "usageMetadata", "candidatesTokenCount", default=0)
         totalTokenCount = safe_get(response_json, "usageMetadata", "totalTokenCount", default=0)
 
-    content = safe_get(json_data, "parts", 0, "text", default="")
+    content = reasoning_content = safe_get(json_data, "parts", 0, "text", default="")
     b64_json = safe_get(json_data, "parts", 0, "inlineData", "data", default="")
     if b64_json:
         image_base64 = b64_json
 
     is_thinking = safe_get(json_data, "parts", 0, "thought", default=False)
-    if is_thinking and len(safe_get(json_data, "parts", default=[])) == 2 \
-    and safe_get(json_data, "parts", 1, "text", default=""):
-        reasoning_content = safe_get(json_data, "parts", 0, "text", default="")
+    if is_thinking:
         content = safe_get(json_data, "parts", 1, "text", default="")
 
     function_call_name = safe_get(json_data, "functionCall", "name", default=None)
