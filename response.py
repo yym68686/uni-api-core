@@ -24,6 +24,7 @@ def gemini_json_poccess(response_str):
     promptTokenCount = 0
     candidatesTokenCount = 0
     totalTokenCount = 0
+    reasoning_content = None
     image_base64 = None
 
     response_json = json.loads(response_str)
