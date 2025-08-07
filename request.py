@@ -1072,7 +1072,8 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
             payload["reasoning_effort"] = "low"
 
     if "o1" in original_model or \
-    "o3" in original_model or "o4" in original_model or "gpt-oss" in original_model:
+    "o3" in original_model or "o4" in original_model or \
+    "gpt-oss" in original_model or "gpt-5" in original_model:
         if request.model.endswith("high"):
             payload["reasoning_effort"] = "high"
         elif request.model.endswith("low"):
