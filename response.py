@@ -33,6 +33,8 @@ def gemini_json_poccess(response_str):
         promptTokenCount = safe_get(response_json, "usageMetadata", "promptTokenCount", default=0)
         candidatesTokenCount = safe_get(response_json, "usageMetadata", "candidatesTokenCount", default=0)
         totalTokenCount = safe_get(response_json, "usageMetadata", "totalTokenCount", default=0)
+        if finishReason != "STOP":
+            logger.error(f"finishReason: {finishReason}")
 
     content = reasoning_content = safe_get(json_data, "parts", 0, "text", default="")
     b64_json = safe_get(json_data, "parts", 0, "inlineData", "data", default="")
