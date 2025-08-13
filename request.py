@@ -27,8 +27,6 @@ from .utils import (
 gemini_max_token_65k_models = ["gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking", "gemini-2.5-flash"]
 
 async def get_gemini_payload(request, engine, provider, api_key=None):
-    import re
-
     headers = {
         'Content-Type': 'application/json'
     }
@@ -176,6 +174,24 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     ]
     generation_config = {}
 
+    def process_tool_parameters(data):
+        if isinstance(data, dict):
+            # 移除 Gemini 不支持的 'additionalProperties'
+            data.pop("additionalProperties", None)
+
+            # 将 'default' 值移入 'description'
+            if "default" in data:
+                default_value = data.pop("default")
+                description = data.get("description", "")
+                data["description"] = f"{description}\nDefault: {default_value}"
+
+            # 递归处理
+            for value in data.values():
+                process_tool_parameters(value)
+        elif isinstance(data, list):
+            for item in data:
+                process_tool_parameters(item)
+
     for field, value in request.model_dump(exclude_unset=True).items():
         if field not in miss_fields and value is not None:
             if field == "tools" and "gemini-2.0-flash-thinking" in original_model:
@@ -185,22 +201,9 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 processed_tools = []
                 for tool in value:
                     function_def = tool["function"]
-                    # gemini不支持parameters里面的additionalProperties字段，需要删除
-                    if safe_get(function_def, "parameters", "additionalProperties", default=None) is not None:
-                        del function_def["parameters"]["additionalProperties"]
+                    if "parameters" in function_def:
+                        process_tool_parameters(function_def["parameters"])
 
-                    # 处理 parameters.properties 中的 default 字段
-                    if safe_get(function_def, "parameters", "properties", default=None):
-                        for prop_value in function_def["parameters"]["properties"].values():
-                            if "additionalProperties" in prop_value:
-                                del prop_value["additionalProperties"]
-                            if "default" in prop_value:
-                                # 将 default 值添加到 description 中
-                                default_value = prop_value["default"]
-                                description = prop_value.get("description", "")
-                                prop_value["description"] = f"{description}\nDefault: {default_value}"
-                                # 删除 default 字段
-                                del prop_value["default"]
                     if function_def["name"] != "googleSearch" and function_def["name"] != "googleSearch":
                         processed_tools.append({"function": function_def})
 
