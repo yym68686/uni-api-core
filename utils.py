@@ -46,7 +46,10 @@ class BaseAPI:
             before_v1 = ""
         self.base_url: str = urlunparse(parsed_url[:2] + ("",) + ("",) * 3)
         self.v1_url: str = urlunparse(parsed_url[:2]+ (before_v1,) + ("",) * 3)
-        self.v1_models: str = urlunparse(parsed_url[:2] + (before_v1 + "models",) + ("",) * 3)
+        if "v1/messages" in parsed_url.path:
+            self.v1_models: str = urlunparse(parsed_url[:2] + ("v1/models",) + ("",) * 3)
+        else:
+            self.v1_models: str = urlunparse(parsed_url[:2] + (before_v1 + "models",) + ("",) * 3)
         self.chat_url: str = urlunparse(parsed_url[:2] + (before_v1 + "chat/completions",) + ("",) * 3)
         self.image_url: str = urlunparse(parsed_url[:2] + (before_v1 + "images/generations",) + ("",) * 3)
         if parsed_url.hostname == "dashscope.aliyuncs.com":
@@ -192,7 +195,10 @@ def update_initial_model(provider):
             endpoint_models_url = endpoint.v1_models
             if isinstance(api, list):
                 api = api[0]
-            headers = {"Authorization": f"Bearer {api}"}
+            if "v1/messages" in api_url:
+                headers = {"x-api-key": api, "anthropic-version": "2023-06-01"}
+            else:
+                headers = {"Authorization": f"Bearer {api}"}
             response = httpx.get(
                 endpoint_models_url,
                 headers=headers,

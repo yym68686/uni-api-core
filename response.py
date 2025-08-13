@@ -426,53 +426,41 @@ async def fetch_claude_response_stream(client, url, headers, payload, model):
                 line, buffer = buffer.split("\n", 1)
                 # logger.info(line)
 
-                if line.startswith("data:"):
-                    line = line.lstrip("data: ")
+                if line.startswith("data:") and (line := line.lstrip("data: ")):
                     resp: dict = json.loads(line)
-                    message = resp.get("message")
-                    if message:
-                        role = message.get("role")
-                        if role:
-                            sse_string = await generate_sse_response(timestamp, model, None, None, None, None, role)
-                            yield sse_string
-                        tokens_use = message.get("usage")
-                        if tokens_use:
-                            input_tokens = tokens_use.get("input_tokens", 0)
-                    usage = resp.get("usage")
-                    if usage:
-                        output_tokens = usage.get("output_tokens", 0)
+
+                    input_tokens = input_tokens or safe_get(resp, "message", "usage", "input_tokens", default=0)
+                    # cache_creation_input_tokens = safe_get(resp, "message", "usage", "cache_creation_input_tokens", default=0)
+                    # cache_read_input_tokens = safe_get(resp, "message", "usage", "cache_read_input_tokens", default=0)
+                    output_tokens = safe_get(resp, "usage", "output_tokens", default=0)
+                    if output_tokens:
                         total_tokens = input_tokens + output_tokens
                         sse_string = await generate_sse_response(timestamp, model, None, None, None, None, None, total_tokens, input_tokens, output_tokens)
                         yield sse_string
-                        # print("\n\rtotal_tokens", total_tokens)
+                        break
 
-                    tool_use = resp.get("content_block")
-                    tools_id = None
-                    function_call_name = None
-                    if tool_use and "tool_use" == tool_use['type']:
-                        # print("tool_use", tool_use)
-                        tools_id = tool_use["id"]
-                        if "name" in tool_use:
-                            function_call_name = tool_use["name"]
-                            sse_string = await generate_sse_response(timestamp, model, None, tools_id, function_call_name, None)
-                            yield sse_string
-                    delta = resp.get("delta")
-                    # print("delta", delta)
-                    if not delta:
+                    text = safe_get(resp, "delta", "text", default="")
+                    if text:
+                        sse_string = await generate_sse_response(timestamp, model, text)
+                        yield sse_string
                         continue
-                    if "text" in delta:
-                        content = delta["text"]
-                        sse_string = await generate_sse_response(timestamp, model, content, None, None)
+
+                    function_call_name = safe_get(resp, "content_block", "name", default=None)
+                    tools_id = safe_get(resp, "content_block", "id", default=None)
+                    if tools_id and function_call_name:
+                        sse_string = await generate_sse_response(timestamp, model, None, tools_id, function_call_name, None)
                         yield sse_string
-                    if "thinking" in delta and delta["thinking"]:
-                        content = delta["thinking"]
-                        sse_string = await generate_sse_response(timestamp, model, reasoning_content=content)
+
+                    thinking_content = safe_get(resp, "delta", "thinking", default="")
+                    if thinking_content:
+                        sse_string = await generate_sse_response(timestamp, model, reasoning_content=thinking_content)
                         yield sse_string
-                    if "partial_json" in delta:
-                        # {"type":"input_json_delta","partial_json":""}
-                        function_call_content = delta["partial_json"]
+
+                    function_call_content = safe_get(resp, "delta", "partial_json", default="")
+                    if function_call_content:
                         sse_string = await generate_sse_response(timestamp, model, None, None, None, function_call_content)
                         yield sse_string
+
     yield "data: [DONE]" + end_of_line
 
 async def fetch_aws_response_stream(client, url, headers, payload, model):
