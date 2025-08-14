@@ -390,7 +390,7 @@ async def fetch_cloudflare_response_stream(client, url, headers, payload, model)
 async def fetch_cohere_response_stream(client, url, headers, payload, model):
     timestamp = int(datetime.timestamp(datetime.now()))
     async with client.stream('POST', url, headers=headers, json=payload) as response:
-        error_message = await check_response(response, "fetch_gpt_response_stream")
+        error_message = await check_response(response, "fetch_cohere_response_stream")
         if error_message:
             yield error_message
             return
