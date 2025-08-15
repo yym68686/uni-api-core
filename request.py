@@ -2,6 +2,7 @@ import re
 import json
 import httpx
 import base64
+import asyncio
 import urllib.parse
 from io import IOBase
 from typing import Tuple
@@ -336,11 +337,11 @@ def create_jwt(client_email, private_key):
     segments.append(base64.urlsafe_b64encode(signature).rstrip(b'='))
     return b'.'.join(segments).decode()
 
-def get_access_token(client_email, private_key):
-    jwt = create_jwt(client_email, private_key)
+async def get_access_token(client_email, private_key):
+    jwt = await asyncio.to_thread(create_jwt, client_email, private_key)
 
-    with httpx.Client() as client:
-        response = client.post(
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
             "https://oauth2.googleapis.com/token",
             data={
                 "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
@@ -356,7 +357,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         'Content-Type': 'application/json'
     }
     if provider.get("client_email") and provider.get("private_key"):
-        access_token = get_access_token(provider['client_email'], provider['private_key'])
+        access_token = await get_access_token(provider['client_email'], provider['private_key'])
         headers['Authorization'] = f"Bearer {access_token}"
     if provider.get("project_id"):
         project_id = provider.get("project_id")
@@ -596,7 +597,7 @@ async def get_vertex_claude_payload(request, engine, provider, api_key=None):
         'Content-Type': 'application/json',
     }
     if provider.get("client_email") and provider.get("private_key"):
-        access_token = get_access_token(provider['client_email'], provider['private_key'])
+        access_token = await get_access_token(provider['client_email'], provider['private_key'])
         headers['Authorization'] = f"Bearer {access_token}"
     if provider.get("project_id"):
         project_id = provider.get("project_id")
@@ -972,7 +973,9 @@ async def get_aws_payload(request, engine, provider, api_key=None):
 
     if provider.get("aws_access_key") and provider.get("aws_secret_key"):
         ACCEPT_HEADER = "application/vnd.amazon.bedrock.payload+json" # 指定接受 Bedrock 流格式
-        amz_date, payload_hash, authorization_header = get_signature(payload, original_model, provider.get("aws_access_key"), provider.get("aws_secret_key"), AWS_REGION, HOST, CONTENT_TYPE, ACCEPT_HEADER)
+        amz_date, payload_hash, authorization_header = await asyncio.to_thread(
+            get_signature, payload, original_model, provider.get("aws_access_key"), provider.get("aws_secret_key"), AWS_REGION, HOST, CONTENT_TYPE, ACCEPT_HEADER
+        )
         headers = {
             'Accept': ACCEPT_HEADER,
             'Content-Type': CONTENT_TYPE,
