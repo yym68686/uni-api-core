@@ -53,9 +53,9 @@ def gemini_json_poccess(response_str):
 
     return is_thinking, reasoning_content, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount
 
-async def fetch_gemini_response_stream(client, url, headers, payload, model):
+async def fetch_gemini_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
-    async with client.stream('POST', url, headers=headers, json=payload) as response:
+    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_gemini_response_stream")
         if error_message:
             yield error_message
@@ -122,9 +122,9 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model):
 
     yield "data: [DONE]" + end_of_line
 
-async def fetch_vertex_claude_response_stream(client, url, headers, payload, model):
+async def fetch_vertex_claude_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
-    async with client.stream('POST', url, headers=headers, json=payload) as response:
+    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_vertex_claude_response_stream")
         if error_message:
             yield error_message
@@ -190,14 +190,14 @@ async def fetch_vertex_claude_response_stream(client, url, headers, payload, mod
 
     yield "data: [DONE]" + end_of_line
 
-async def fetch_gpt_response_stream(client, url, headers, payload):
+async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
     random.seed(timestamp)
     random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=29))
     is_thinking = False
     has_send_thinking = False
     ark_tag = False
-    async with client.stream('POST', url, headers=headers, json=payload) as response:
+    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_gpt_response_stream")
         if error_message:
             yield error_message
@@ -306,12 +306,12 @@ async def fetch_gpt_response_stream(client, url, headers, payload):
                         yield "data: " + json.dumps(line).strip() + end_of_line
     yield "data: [DONE]" + end_of_line
 
-async def fetch_azure_response_stream(client, url, headers, payload):
+async def fetch_azure_response_stream(client, url, headers, payload, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
     is_thinking = False
     has_send_thinking = False
     ark_tag = False
-    async with client.stream('POST', url, headers=headers, json=payload) as response:
+    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_azure_response_stream")
         if error_message:
             yield error_message
@@ -362,9 +362,9 @@ async def fetch_azure_response_stream(client, url, headers, payload):
                         yield "data: " + json.dumps(line).strip() + end_of_line
     yield "data: [DONE]" + end_of_line
 
-async def fetch_cloudflare_response_stream(client, url, headers, payload, model):
+async def fetch_cloudflare_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
-    async with client.stream('POST', url, headers=headers, json=payload) as response:
+    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_cloudflare_response_stream")
         if error_message:
             yield error_message
@@ -387,9 +387,9 @@ async def fetch_cloudflare_response_stream(client, url, headers, payload, model)
                         yield sse_string
     yield "data: [DONE]" + end_of_line
 
-async def fetch_cohere_response_stream(client, url, headers, payload, model):
+async def fetch_cohere_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
-    async with client.stream('POST', url, headers=headers, json=payload) as response:
+    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_cohere_response_stream")
         if error_message:
             yield error_message
@@ -410,9 +410,9 @@ async def fetch_cohere_response_stream(client, url, headers, payload, model):
                     yield sse_string
     yield "data: [DONE]" + end_of_line
 
-async def fetch_claude_response_stream(client, url, headers, payload, model):
+async def fetch_claude_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
-    async with client.stream('POST', url, headers=headers, json=payload) as response:
+    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_claude_response_stream")
         if error_message:
             yield error_message
@@ -463,9 +463,9 @@ async def fetch_claude_response_stream(client, url, headers, payload, model):
 
     yield "data: [DONE]" + end_of_line
 
-async def fetch_aws_response_stream(client, url, headers, payload, model):
+async def fetch_aws_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
-    async with client.stream('POST', url, headers=headers, json=payload) as response:
+    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_aws_response_stream")
         if error_message:
             yield error_message
@@ -514,13 +514,13 @@ async def fetch_aws_response_stream(client, url, headers, payload, model):
 
     yield "data: [DONE]" + end_of_line
 
-async def fetch_response(client, url, headers, payload, engine, model):
+async def fetch_response(client, url, headers, payload, engine, model, timeout):
     response = None
     if payload.get("file"):
         file = payload.pop("file")
-        response = await client.post(url, headers=headers, data=payload, files={"file": file})
+        response = await client.post(url, headers=headers, data=payload, files={"file": file}, timeout=timeout)
     else:
-        response = await client.post(url, headers=headers, json=payload)
+        response = await client.post(url, headers=headers, json=payload, timeout=timeout)
     error_message = await check_response(response, "fetch_response")
     if error_message:
         yield error_message
@@ -625,27 +625,27 @@ async def fetch_response(client, url, headers, payload, engine, model):
         response_json = response.json()
         yield response_json
 
-async def fetch_response_stream(client, url, headers, payload, engine, model):
+async def fetch_response_stream(client, url, headers, payload, engine, model, timeout):
     if engine == "gemini" or engine == "vertex-gemini":
-        async for chunk in fetch_gemini_response_stream(client, url, headers, payload, model):
+        async for chunk in fetch_gemini_response_stream(client, url, headers, payload, model, timeout):
             yield chunk
     elif engine == "claude" or engine == "vertex-claude":
-        async for chunk in fetch_claude_response_stream(client, url, headers, payload, model):
+        async for chunk in fetch_claude_response_stream(client, url, headers, payload, model, timeout):
             yield chunk
     elif engine == "aws":
-        async for chunk in fetch_aws_response_stream(client, url, headers, payload, model):
+        async for chunk in fetch_aws_response_stream(client, url, headers, payload, model, timeout):
             yield chunk
     elif engine == "gpt" or engine == "openrouter" or engine == "azure-databricks":
-        async for chunk in fetch_gpt_response_stream(client, url, headers, payload):
+        async for chunk in fetch_gpt_response_stream(client, url, headers, payload, timeout):
             yield chunk
     elif engine == "azure":
-        async for chunk in fetch_azure_response_stream(client, url, headers, payload):
+        async for chunk in fetch_azure_response_stream(client, url, headers, payload, timeout):
             yield chunk
     elif engine == "cloudflare":
-        async for chunk in fetch_cloudflare_response_stream(client, url, headers, payload, model):
+        async for chunk in fetch_cloudflare_response_stream(client, url, headers, payload, model, timeout):
             yield chunk
     elif engine == "cohere":
-        async for chunk in fetch_cohere_response_stream(client, url, headers, payload, model):
+        async for chunk in fetch_cohere_response_stream(client, url, headers, payload, model, timeout):
             yield chunk
     else:
         raise ValueError("Unknown response")
