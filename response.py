@@ -514,7 +514,7 @@ async def fetch_aws_response_stream(client, url, headers, payload, model, timeou
 
     yield "data: [DONE]" + end_of_line
 
-async def fetch_response(client, url, headers, payload, engine, model, timeout):
+async def fetch_response(client, url, headers, payload, engine, model, timeout=200):
     response = None
     if payload.get("file"):
         file = payload.pop("file")
