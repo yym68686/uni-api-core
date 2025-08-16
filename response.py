@@ -625,7 +625,7 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout):
         response_json = response.json()
         yield response_json
 
-async def fetch_response_stream(client, url, headers, payload, engine, model, timeout):
+async def fetch_response_stream(client, url, headers, payload, engine, model, timeout=200):
     if engine == "gemini" or engine == "vertex-gemini":
         async for chunk in fetch_gemini_response_stream(client, url, headers, payload, model, timeout):
             yield chunk
