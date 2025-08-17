@@ -3,6 +3,7 @@ import json
 import random
 import string
 import base64
+import asyncio
 from datetime import datetime
 
 from .log_config import logger
@@ -14,19 +15,19 @@ async def check_response(response, error_log):
         error_message = await response.aread()
         error_str = error_message.decode('utf-8', errors='replace')
         try:
-            error_json = json.loads(error_str)
+            error_json = await asyncio.to_thread(json.loads, error_str)
         except json.JSONDecodeError:
             error_json = error_str
         return {"error": f"{error_log} HTTP Error", "status_code": response.status_code, "details": error_json}
     return None
 
-def gemini_json_poccess(response_str):
+async def gemini_json_poccess(response_str):
     promptTokenCount = 0
     candidatesTokenCount = 0
     totalTokenCount = 0
     image_base64 = None
 
-    response_json = json.loads(response_str)
+    response_json = await asyncio.to_thread(json.loads, response_str)
     json_data = safe_get(response_json, "candidates", 0, "content", default=None)
     finishReason = safe_get(response_json, "candidates", 0 , "finishReason", default=None)
     if finishReason:
@@ -75,7 +76,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                 if line.startswith("data: "):
                     parts_json = line.lstrip("data: ").strip()
                     try:
-                        json.loads(parts_json)
+                        await asyncio.to_thread(json.loads, parts_json)
                     except json.JSONDecodeError:
                         logger.error(f"JSON decode error: {parts_json}")
                         continue
@@ -83,12 +84,12 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                     parts_json += line
                     parts_json = parts_json.lstrip("[,")
                     try:
-                        json.loads(parts_json)
+                        await asyncio.to_thread(json.loads, parts_json)
                     except json.JSONDecodeError:
                         continue
 
                 # https://ai.google.dev/api/generate-content?hl=zh-cn#FinishReason
-                is_thinking, reasoning_content, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = gemini_json_poccess(parts_json)
+                is_thinking, reasoning_content, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = await gemini_json_poccess(parts_json)
 
                 if is_thinking:
                     sse_string = await generate_sse_response(timestamp, model, reasoning_content=reasoning_content)
@@ -159,7 +160,7 @@ async def fetch_vertex_claude_response_stream(client, url, headers, payload, mod
 
                 if line and '\"text\": \"' in line and is_finish == False:
                     try:
-                        json_data = json.loads( "{" + line.strip().rstrip(",") + "}")
+                        json_data = await asyncio.to_thread(json.loads, "{" + line.strip().rstrip(",") + "}")
                         content = json_data.get('text', '')
                         sse_string = await generate_sse_response(timestamp, model, content=content)
                         yield sse_string
@@ -176,7 +177,7 @@ async def fetch_vertex_claude_response_stream(client, url, headers, payload, mod
                     function_full_response += line
 
         if need_function_call:
-            function_call = json.loads(function_full_response)
+            function_call = await asyncio.to_thread(json.loads, function_full_response)
             function_call_name = function_call["name"]
             function_call_id = function_call["id"]
             sse_string = await generate_sse_response(timestamp, model, content=None, tools_id=function_call_id, function_call_name=function_call_name)
@@ -213,7 +214,7 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
                 if line and not line.startswith(":") and (result:=line.lstrip("data: ").strip()):
                     if result.strip() == "[DONE]":
                         break
-                    line = json.loads(result)
+                    line = await asyncio.to_thread(json.loads, result)
                     line['id'] = f"chatcmpl-{random_str}"
 
                     # 处理 <think> 标签
@@ -327,7 +328,7 @@ async def fetch_azure_response_stream(client, url, headers, payload, timeout):
                 if line and not line.startswith(":") and (result:=line.lstrip("data: ").strip()):
                     if result.strip() == "[DONE]":
                         break
-                    line = json.loads(result)
+                    line = await asyncio.to_thread(json.loads, result)
                     no_stream_content = safe_get(line, "choices", 0, "message", "content", default="")
                     content = safe_get(line, "choices", 0, "delta", "content", default="")
 
@@ -380,7 +381,7 @@ async def fetch_cloudflare_response_stream(client, url, headers, payload, model,
                     line = line.lstrip("data: ")
                     if line == "[DONE]":
                         break
-                    resp: dict = json.loads(line)
+                    resp: dict = await asyncio.to_thread(json.loads, line)
                     message = resp.get("response")
                     if message:
                         sse_string = await generate_sse_response(timestamp, model, content=message)
@@ -401,7 +402,7 @@ async def fetch_cohere_response_stream(client, url, headers, payload, model, tim
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
                 # logger.info("line: %s", repr(line))
-                resp: dict = json.loads(line)
+                resp: dict = await asyncio.to_thread(json.loads, line)
                 if resp.get("is_finished") == True:
                     break
                 if resp.get("event_type") == "text-generation":
@@ -427,7 +428,7 @@ async def fetch_claude_response_stream(client, url, headers, payload, model, tim
                 # logger.info(line)
 
                 if line.startswith("data:") and (line := line.lstrip("data: ")):
-                    resp: dict = json.loads(line)
+                    resp: dict = await asyncio.to_thread(json.loads, line)
 
                     input_tokens = input_tokens or safe_get(resp, "message", "usage", "input_tokens", default=0)
                     # cache_creation_input_tokens = safe_get(resp, "message", "usage", "cache_creation_input_tokens", default=0)
@@ -486,7 +487,7 @@ async def fetch_aws_response_stream(client, url, headers, payload, model, timeou
                 if not json_match:
                     continue
                 try:
-                    chunk_data = json.loads(json_match.group(0).lstrip('event'))
+                    chunk_data = await asyncio.to_thread(json.loads, json_match.group(0).lstrip('event'))
                 except json.JSONDecodeError:
                     logger.error(f"DEBUG json.JSONDecodeError: {json_match.group(0).lstrip('event')!r}")
                     continue
@@ -496,7 +497,7 @@ async def fetch_aws_response_stream(client, url, headers, payload, model, timeou
                     # 解码 Base64 编码的字节
                     decoded_bytes = base64.b64decode(chunk_data["bytes"])
                     # 将解码后的字节再次解析为 JSON
-                    payload_chunk = json.loads(decoded_bytes.decode('utf-8'))
+                    payload_chunk = await asyncio.to_thread(json.loads, decoded_bytes.decode('utf-8'))
                     # print(f"DEBUG payload_chunk: {payload_chunk!r}")
 
                     text = safe_get(payload_chunk, "delta", "text", default="")
@@ -530,7 +531,8 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         yield response.read()
 
     elif engine == "gemini" or engine == "vertex-gemini" or engine == "aws":
-        response_json = response.json()
+        response_bytes = await response.aread()
+        response_json = await asyncio.to_thread(json.loads, response_bytes)
         # print("response_json", json.dumps(response_json, indent=4, ensure_ascii=False))
 
         if isinstance(response_json, str):
@@ -585,7 +587,8 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=function_call_name, function_call_content=function_call_content, role=role, total_tokens=total_tokens, prompt_tokens=prompt_tokens, completion_tokens=candidates_tokens, reasoning_content=reasoning_content, image_base64=image_base64)
 
     elif engine == "claude":
-        response_json = response.json()
+        response_bytes = await response.aread()
+        response_json = await asyncio.to_thread(json.loads, response_bytes)
         # print("response_json", json.dumps(response_json, indent=4, ensure_ascii=False))
 
         content = safe_get(response_json, "content", 0, "text")
@@ -604,7 +607,8 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         yield await generate_no_stream_response(timestamp, model, content=content, tools_id=tools_id, function_call_name=function_call_name, function_call_content=function_call_content, role=role, total_tokens=total_tokens, prompt_tokens=prompt_tokens, completion_tokens=output_tokens)
 
     elif engine == "azure":
-        response_json = response.json()
+        response_bytes = await response.aread()
+        response_json = await asyncio.to_thread(json.loads, response_bytes)
         # 删除 content_filter_results
         if "choices" in response_json:
             for choice in response_json["choices"]:
@@ -618,11 +622,13 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         yield response_json
 
     elif "dashscope.aliyuncs.com" in url and "multimodal-generation" in url:
-        response_json = response.json()
+        response_bytes = await response.aread()
+        response_json = await asyncio.to_thread(json.loads, response_bytes)
         content = safe_get(response_json, "output", "choices", 0, "message", "content", 0, default=None)
         yield content
     else:
-        response_json = response.json()
+        response_bytes = await response.aread()
+        response_json = await asyncio.to_thread(json.loads, response_bytes)
         yield response_json
 
 async def fetch_response_stream(client, url, headers, payload, engine, model, timeout=200):
