@@ -1954,7 +1954,7 @@ async def get_embedding_payload(request, engine, provider, api_key=None):
     }
 
     url = provider['base_url']
-    if "gemini-embedding" in original_model:
+    if "gemini-embedding" in original_model and "127.0.0.1" not in url:
         if api_key:
             headers['x-goog-api-key'] = f"{api_key}"
         parsed_url = urllib.parse.urlparse(url)
