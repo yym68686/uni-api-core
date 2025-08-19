@@ -626,6 +626,28 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         response_json = await asyncio.to_thread(json.loads, response_bytes)
         content = safe_get(response_json, "output", "choices", 0, "message", "content", 0, default=None)
         yield content
+
+    elif "embedContent" in url:
+        response_bytes = await response.aread()
+        response_json = await asyncio.to_thread(json.loads, response_bytes)
+        content = safe_get(response_json, "embedding", "values", default=[])
+        response_embedContent = {
+            "object": "list",
+            "data": [
+                {
+                    "object": "embedding",
+                    "embedding":content,
+                    "index": 0
+                }
+            ],
+            "model": model,
+            "usage": {
+                "prompt_tokens": 0,
+                "total_tokens": 0
+            }
+        }
+
+        yield response_embedContent
     else:
         response_bytes = await response.aread()
         response_json = await asyncio.to_thread(json.loads, response_bytes)

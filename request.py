@@ -1952,21 +1952,36 @@ async def get_embedding_payload(request, engine, provider, api_key=None):
     headers = {
         "Content-Type": "application/json",
     }
-    if api_key:
-        headers['Authorization'] = f"Bearer {api_key}"
+
     url = provider['base_url']
-    url = BaseAPI(url).embeddings
+    if "gemini-embedding" in original_model:
+        if api_key:
+            headers['x-goog-api-key'] = f"{api_key}"
+        parsed_url = urllib.parse.urlparse(url)
+        url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path.split('/models')[0].rstrip('/')}/models/{original_model}:embedContent"
+        payload = {
+            "content": {
+                "parts": [
+                    {
+                        "text": request.input
+                    }
+                ]
+            }
+        }
+    else:
+        if api_key:
+            headers['Authorization'] = f"Bearer {api_key}"
+        url = BaseAPI(url).embeddings
+        payload = {
+            "input": request.input,
+            "model": original_model,
+        }
 
-    payload = {
-        "input": request.input,
-        "model": original_model,
-    }
-
-    if request.encoding_format:
-        if url.startswith("https://api.jina.ai"):
-            payload["embedding_type"] = request.encoding_format
-        else:
-            payload["encoding_format"] = request.encoding_format
+        if request.encoding_format:
+            if url.startswith("https://api.jina.ai"):
+                payload["embedding_type"] = request.encoding_format
+            else:
+                payload["encoding_format"] = request.encoding_format
 
     return url, headers, payload
 
