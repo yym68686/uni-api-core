@@ -1955,7 +1955,7 @@ async def get_embedding_payload(request, engine, provider, api_key=None):
 
     url = provider['base_url']
     parsed_url = urlparse(url)
-    if "gemini-embedding" in original_model and "127.0.0.1" not in url and \
+    if "embedding-00" in original_model and "127.0.0.1" not in url and \
     (parsed_url.path.endswith("/v1beta") or \
     parsed_url.path.endswith("/v1") or \
     (parsed_url.netloc == 'generativelanguage.googleapis.com' and "openai/chat/completions" not in parsed_url.path)):
