@@ -3,9 +3,9 @@ import json
 import httpx
 import base64
 import asyncio
-import urllib.parse
 from io import IOBase
 from typing import Tuple
+from urllib.parse import urlparse
 
 from .models import RequestModel, Message
 from .utils import (
@@ -41,7 +41,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     else:
         gemini_stream = "generateContent"
     url = provider['base_url']
-    parsed_url = urllib.parse.urlparse(url)
+    parsed_url = urlparse(url)
     if "/v1beta" in parsed_url.path:
         api_version = "v1beta"
     else:
@@ -1954,7 +1954,11 @@ async def get_embedding_payload(request, engine, provider, api_key=None):
     }
 
     url = provider['base_url']
-    if "gemini-embedding" in original_model and "127.0.0.1" not in url:
+    parsed_url = urlparse(url)
+    if "gemini-embedding" in original_model and "127.0.0.1" not in url and \
+    (parsed_url.path.endswith("/v1beta") or \
+    parsed_url.path.endswith("/v1") or \
+    (parsed_url.netloc == 'generativelanguage.googleapis.com' and "openai/chat/completions" not in parsed_url.path)):
         if api_key:
             headers['x-goog-api-key'] = f"{api_key}"
         parsed_url = urllib.parse.urlparse(url)
