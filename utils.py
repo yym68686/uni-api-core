@@ -518,7 +518,7 @@ async def generate_sse_response(timestamp, model, content=None, tools_id=None, f
         sample_data["choices"][0]["delta"] = {}
         sample_data["choices"][0]["finish_reason"] = stop
 
-    json_data = json.dumps(sample_data, ensure_ascii=False)
+    json_data = await asyncio.to_thread(json.dumps, sample_data, ensure_ascii=False)
     # print("json_data", json.dumps(sample_data, indent=4, ensure_ascii=False))
 
     # 构建SSE响应
@@ -557,6 +557,9 @@ async def generate_no_stream_response(timestamp, model, content=None, tools_id=N
     if function_call_name:
         if not tools_id:
             tools_id = f"call_{random_str}"
+
+        arguments_json = await asyncio.to_thread(json.dumps, function_call_content, ensure_ascii=False)
+
         sample_data = {
             "id": f"chatcmpl-{random_str}",
             "object": "chat.completion",
@@ -574,7 +577,7 @@ async def generate_no_stream_response(timestamp, model, content=None, tools_id=N
                             "type": "function",
                             "function": {
                                 "name": function_call_name,
-                                "arguments": json.dumps(function_call_content, ensure_ascii=False)
+                                "arguments": arguments_json
                             }
                         }
                     ],
@@ -605,7 +608,7 @@ async def generate_no_stream_response(timestamp, model, content=None, tools_id=N
     if total_tokens:
         sample_data["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": total_tokens}
 
-    json_data = json.dumps(sample_data, ensure_ascii=False)
+    json_data = await asyncio.to_thread(json.dumps, sample_data, ensure_ascii=False)
     # print("json_data", json.dumps(sample_data, indent=4, ensure_ascii=False))
 
     return json_data
