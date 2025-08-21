@@ -56,7 +56,8 @@ async def gemini_json_poccess(response_str):
 
 async def fetch_gemini_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
-    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
+    json_payload = await asyncio.to_thread(json.dumps, payload)
+    async with client.stream('POST', url, headers=headers, content=json_payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_gemini_response_stream")
         if error_message:
             yield error_message
@@ -125,7 +126,8 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
 
 async def fetch_vertex_claude_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
-    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
+    json_payload = await asyncio.to_thread(json.dumps, payload)
+    async with client.stream('POST', url, headers=headers, content=json_payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_vertex_claude_response_stream")
         if error_message:
             yield error_message
@@ -198,7 +200,8 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
     is_thinking = False
     has_send_thinking = False
     ark_tag = False
-    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
+    json_payload = await asyncio.to_thread(json.dumps, payload)
+    async with client.stream('POST', url, headers=headers, content=json_payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_gpt_response_stream")
         if error_message:
             yield error_message
@@ -312,7 +315,8 @@ async def fetch_azure_response_stream(client, url, headers, payload, timeout):
     is_thinking = False
     has_send_thinking = False
     ark_tag = False
-    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
+    json_payload = await asyncio.to_thread(json.dumps, payload)
+    async with client.stream('POST', url, headers=headers, content=json_payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_azure_response_stream")
         if error_message:
             yield error_message
@@ -365,7 +369,8 @@ async def fetch_azure_response_stream(client, url, headers, payload, timeout):
 
 async def fetch_cloudflare_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
-    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
+    json_payload = await asyncio.to_thread(json.dumps, payload)
+    async with client.stream('POST', url, headers=headers, content=json_payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_cloudflare_response_stream")
         if error_message:
             yield error_message
@@ -390,7 +395,8 @@ async def fetch_cloudflare_response_stream(client, url, headers, payload, model,
 
 async def fetch_cohere_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
-    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
+    json_payload = await asyncio.to_thread(json.dumps, payload)
+    async with client.stream('POST', url, headers=headers, content=json_payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_cohere_response_stream")
         if error_message:
             yield error_message
@@ -413,7 +419,8 @@ async def fetch_cohere_response_stream(client, url, headers, payload, model, tim
 
 async def fetch_claude_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
-    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
+    json_payload = await asyncio.to_thread(json.dumps, payload)
+    async with client.stream('POST', url, headers=headers, content=json_payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_claude_response_stream")
         if error_message:
             yield error_message
@@ -466,7 +473,8 @@ async def fetch_claude_response_stream(client, url, headers, payload, model, tim
 
 async def fetch_aws_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
-    async with client.stream('POST', url, headers=headers, json=payload, timeout=timeout) as response:
+    json_payload = await asyncio.to_thread(json.dumps, payload)
+    async with client.stream('POST', url, headers=headers, content=json_payload, timeout=timeout) as response:
         error_message = await check_response(response, "fetch_aws_response_stream")
         if error_message:
             yield error_message
@@ -521,7 +529,8 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         file = payload.pop("file")
         response = await client.post(url, headers=headers, data=payload, files={"file": file}, timeout=timeout)
     else:
-        response = await client.post(url, headers=headers, json=payload, timeout=timeout)
+        json_payload = await asyncio.to_thread(json.dumps, payload)
+        response = await client.post(url, headers=headers, content=json_payload, timeout=timeout)
     error_message = await check_response(response, "fetch_response")
     if error_message:
         yield error_message
