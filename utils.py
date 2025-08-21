@@ -64,7 +64,6 @@ class BaseAPI:
             self.audio_speech: str = urlunparse(parsed_url[:2] + (before_v1 + "audio/speech",) + ("",) * 3)
 
         if parsed_url.path.endswith("/v1beta") or \
-        parsed_url.path.endswith("/v1") or \
         (parsed_url.netloc == 'generativelanguage.googleapis.com' and "openai/chat/completions" not in parsed_url.path):
             before_v1 = parsed_url.path.split("/v1")[0]
             self.base_url = api_url
@@ -78,7 +77,6 @@ def get_engine(provider, endpoint=None, original_model=""):
     engine = None
     stream = None
     if parsed_url.path.endswith("/v1beta") or \
-    parsed_url.path.endswith("/v1") or \
     (parsed_url.netloc == 'generativelanguage.googleapis.com' and "openai/chat/completions" not in parsed_url.path):
         engine = "gemini"
     elif parsed_url.netloc.rstrip('/').endswith('aiplatform.googleapis.com') or \
