@@ -169,7 +169,7 @@ def get_proxy(proxy, client_config = {}):
             }
     return client_config
 
-def update_initial_model(provider):
+async def update_initial_model(provider):
     try:
         engine, stream_mode = get_engine(provider, endpoint=None, original_model="")
         # print("engine", engine, provider)
@@ -181,8 +181,8 @@ def update_initial_model(provider):
             before_v1 = api_url.split("/v1beta")[0]
             url = before_v1 + "/v1beta/models"
             params = {"key": api}
-            with httpx.Client(**client_config) as client:
-                response = client.get(url, params=params)
+            async with httpx.AsyncClient(**client_config) as client:
+                response = await client.get(url, params=params)
 
             original_models = response.json()
             if original_models.get("error"):
@@ -202,11 +202,11 @@ def update_initial_model(provider):
                 headers = {"x-api-key": api, "anthropic-version": "2023-06-01"}
             else:
                 headers = {"Authorization": f"Bearer {api}"}
-            response = httpx.get(
-                endpoint_models_url,
-                headers=headers,
-                **client_config
-            )
+            async with httpx.AsyncClient(**client_config) as client:
+                response = await client.get(
+                    endpoint_models_url,
+                    headers=headers,
+                )
             models = response.json()
             if models.get("error"):
                 logger.error({"error": models.get("error"), "endpoint": endpoint_models_url, "api": api})
