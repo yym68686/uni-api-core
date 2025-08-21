@@ -1963,11 +1963,16 @@ async def get_embedding_payload(request, engine, provider, api_key=None):
             headers['x-goog-api-key'] = f"{api_key}"
         parsed_url = urllib.parse.urlparse(url)
         url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path.split('/models')[0].rstrip('/')}/models/{original_model}:embedContent"
+        if isinstance(request.input, list) and len(request.input) == 1:
+            text_content = request.input[0]
+        else:
+            text_content = request.input
+
         payload = {
             "content": {
                 "parts": [
                     {
-                        "text": request.input
+                        "text": text_content
                     }
                 ]
             }
