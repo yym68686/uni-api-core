@@ -1952,45 +1952,21 @@ async def get_embedding_payload(request, engine, provider, api_key=None):
     headers = {
         "Content-Type": "application/json",
     }
+    if api_key:
+        headers['Authorization'] = f"Bearer {api_key}"
 
     url = provider['base_url']
-    parsed_url = urlparse(url)
-    if "embedding-00" in original_model and "127.0.0.1" not in url and \
-    (parsed_url.path.endswith("/v1beta") or \
-    parsed_url.path.endswith("/v1") or \
-    (parsed_url.netloc == 'generativelanguage.googleapis.com' and "openai/chat/completions" not in parsed_url.path)):
-        if api_key:
-            headers['x-goog-api-key'] = f"{api_key}"
-        parsed_url = urllib.parse.urlparse(url)
-        url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path.split('/models')[0].rstrip('/')}/models/{original_model}:embedContent"
-        if isinstance(request.input, list) and len(request.input) == 1:
-            text_content = request.input[0]
+    url = BaseAPI(url).embeddings
+    payload = {
+        "input": request.input,
+        "model": original_model,
+    }
+
+    if request.encoding_format:
+        if url.startswith("https://api.jina.ai"):
+            payload["embedding_type"] = request.encoding_format
         else:
-            text_content = request.input
-
-        payload = {
-            "content": {
-                "parts": [
-                    {
-                        "text": text_content
-                    }
-                ]
-            }
-        }
-    else:
-        if api_key:
-            headers['Authorization'] = f"Bearer {api_key}"
-        url = BaseAPI(url).embeddings
-        payload = {
-            "input": request.input,
-            "model": original_model,
-        }
-
-        if request.encoding_format:
-            if url.startswith("https://api.jina.ai"):
-                payload["embedding_type"] = request.encoding_format
-            else:
-                payload["encoding_format"] = request.encoding_format
+            payload["encoding_format"] = request.encoding_format
 
     return url, headers, payload
 
