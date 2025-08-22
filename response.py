@@ -48,7 +48,7 @@ async def gemini_json_poccess(response_str):
 
     function_call_name = safe_get(json_data, "functionCall", "name", default=None)
     function_full_response = safe_get(json_data, "functionCall", "args", default="")
-    function_full_response = json.dumps(function_full_response) if function_full_response else None
+    function_full_response = await asyncio.to_thread(json.dumps, function_full_response) if function_full_response else None
 
     blockReason = safe_get(json_data, 0, "promptFeedback", "blockReason", default=None)
 
