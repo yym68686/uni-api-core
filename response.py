@@ -21,13 +21,12 @@ async def check_response(response, error_log):
         return {"error": f"{error_log} HTTP Error", "status_code": response.status_code, "details": error_json}
     return None
 
-async def gemini_json_poccess(response_str):
+async def gemini_json_poccess(response_json):
     promptTokenCount = 0
     candidatesTokenCount = 0
     totalTokenCount = 0
     image_base64 = None
 
-    response_json = await asyncio.to_thread(json.loads, response_str)
     json_data = safe_get(response_json, "candidates", 0, "content", default=None)
     finishReason = safe_get(response_json, "candidates", 0 , "finishReason", default=None)
     if finishReason:
@@ -77,7 +76,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                 if line.startswith("data: "):
                     parts_json = line.lstrip("data: ").strip()
                     try:
-                        await asyncio.to_thread(json.loads, parts_json)
+                        response_json = await asyncio.to_thread(json.loads, parts_json)
                     except json.JSONDecodeError:
                         logger.error(f"JSON decode error: {parts_json}")
                         continue
@@ -85,12 +84,12 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                     parts_json += line
                     parts_json = parts_json.lstrip("[,")
                     try:
-                        await asyncio.to_thread(json.loads, parts_json)
+                        response_json = await asyncio.to_thread(json.loads, parts_json)
                     except json.JSONDecodeError:
                         continue
 
                 # https://ai.google.dev/api/generate-content?hl=zh-cn#FinishReason
-                is_thinking, reasoning_content, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = await gemini_json_poccess(parts_json)
+                is_thinking, reasoning_content, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = await gemini_json_poccess(response_json)
 
                 if is_thinking:
                     sse_string = await generate_sse_response(timestamp, model, reasoning_content=reasoning_content)
