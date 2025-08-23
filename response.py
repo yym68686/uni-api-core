@@ -183,7 +183,7 @@ async def fetch_vertex_claude_response_stream(client, url, headers, payload, mod
             function_call_id = function_call["id"]
             sse_string = await generate_sse_response(timestamp, model, content=None, tools_id=function_call_id, function_call_name=function_call_name)
             yield sse_string
-            function_full_response = json.dumps(function_call["input"])
+            function_full_response = await asyncio.to_thread(json.dumps, function_call["input"])
             sse_string = await generate_sse_response(timestamp, model, content=None, tools_id=function_call_id, function_call_name=None, function_call_content=function_full_response)
             yield sse_string
 
@@ -306,7 +306,8 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
                     else:
                         if no_stream_content:
                             del line["choices"][0]["message"]
-                        yield "data: " + json.dumps(line).strip() + end_of_line
+                        json_line = await asyncio.to_thread(json.dumps, line)
+                        yield "data: " + json_line.strip() + end_of_line
     yield "data: [DONE]" + end_of_line
 
 async def fetch_azure_response_stream(client, url, headers, payload, timeout):
@@ -363,7 +364,8 @@ async def fetch_azure_response_stream(client, url, headers, payload, timeout):
                     else:
                         if no_stream_content:
                             del line["choices"][0]["message"]
-                        yield "data: " + json.dumps(line).strip() + end_of_line
+                        json_line = await asyncio.to_thread(json.dumps, line)
+                        yield "data: " + json_line.strip() + end_of_line
     yield "data: [DONE]" + end_of_line
 
 async def fetch_cloudflare_response_stream(client, url, headers, payload, model, timeout):
