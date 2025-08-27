@@ -243,7 +243,8 @@ def parse_rate_limit(limit_string):
         'h': 3600, 'hr': 3600, 'hour': 3600,
         'd': 86400, 'day': 86400,
         'mo': 2592000, 'month': 2592000,
-        'y': 31536000, 'year': 31536000
+        'y': 31536000, 'year': 31536000,
+        'tpr': -1,
     }
 
     # 处理多个限制条件
@@ -376,6 +377,32 @@ class ThreadSafeCircularList:
                 if self.index == start_index:
                     logger.warning(f"All API keys are rate limited!")
                     raise HTTPException(status_code=429, detail="Too many requests")
+
+    async def is_tpr_exceeded(self, model: str = None, tokens: int = 0) -> bool:
+        """Checks if the request exceeds the TPR (Tokens Per Request) limit."""
+        if not tokens:
+            return False
+
+        async with self.lock:
+            rate_limit = None
+            model_key = model or "default"
+            if model and model_key in self.rate_limits:
+                rate_limit = self.rate_limits[model_key]
+            else:
+                # fuzzy match
+                for limit_model in self.rate_limits:
+                    if limit_model != "default" and model and limit_model in model:
+                        rate_limit = self.rate_limits[limit_model]
+                        break
+            if rate_limit is None:
+                rate_limit = self.rate_limits.get("default", [])
+
+            for limit_count, limit_period in rate_limit:
+                if limit_period == -1:  # TPR limit
+                    if tokens > limit_count:
+                        # logger.warning(f"API provider for model {model_key} exceeds TPR limit ({tokens}/{limit_count}).")
+                        return True
+        return False
 
     async def is_all_rate_limited(self, model: str = None) -> bool:
         """检查是否所有的items都被速率限制
