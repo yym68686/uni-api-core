@@ -213,6 +213,9 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
                 # logger.info("line: %s", repr(line))
+                if line.startswith(": keepalive"):
+                    yield line + end_of_line
+                    continue
                 if line and not line.startswith(":") and (result:=line.lstrip("data: ").strip()):
                     if result.strip() == "[DONE]":
                         break
