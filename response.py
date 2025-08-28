@@ -275,6 +275,11 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
 
                     no_stream_content = safe_get(line, "choices", 0, "message", "content", default=None)
                     openrouter_reasoning = safe_get(line, "choices", 0, "delta", "reasoning", default="")
+                    openrouter_base64_image = safe_get(line, "choices", 0, "delta", "images", 0, "image_url", "url", default="")
+                    if openrouter_base64_image:
+                        sse_string = await generate_sse_response(timestamp, payload["model"], content=f"\n\n![image]({openrouter_base64_image})")
+                        yield sse_string
+                        continue
                     azure_databricks_claude_summary_content = safe_get(line, "choices", 0, "delta", "content", 0, "summary", 0, "text", default="")
                     azure_databricks_claude_signature_content = safe_get(line, "choices", 0, "delta", "content", 0, "summary", 0, "signature", default="")
                     # print("openrouter_reasoning", repr(openrouter_reasoning), openrouter_reasoning.endswith("\\\\"), openrouter_reasoning.endswith("\\"))
