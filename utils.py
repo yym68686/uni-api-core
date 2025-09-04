@@ -797,6 +797,44 @@ def parse_json_safely(json_str):
             # 两种方法都失败，抛出异常
             raise Exception(f"无法解析JSON字符串: {e}, {json_str}")
 
+async def upload_image_to_0x0st(base64_image: str):
+    """
+    Uploads a base64 encoded image to 0x0.st.
+
+    Args:
+        base64_image: The base64 encoded image string.
+
+    Returns:
+        The URL of the uploaded image.
+    """
+    if "," in base64_image:
+        base64_image_split = base64_image.split(",")[1]
+
+    image_data = base64.b64decode(base64_image_split)
+
+    img_format = get_image_format(image_data)
+    if not img_format:
+        img_format = 'png'  # 如果无法检测到格式，则默认为 png
+
+    content_type = f'image/{img_format}'
+    file_name = f'image.{img_format}'
+
+    files = {'file': (file_name, image_data, content_type)}
+    data = {'expires': '24', 'secret': '123456'}
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post("https://0x0.st", files=files, data=data)
+            response.raise_for_status()
+            return response.text.strip()
+        except httpx.RequestError as e:
+            logger.error(f"请求 0x0.st 时出错: {e}")
+            # raise HTTPException(status_code=500, detail="上传图片到 0x0.st 失败")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"上传图片到 0x0.st 时发生 HTTP 错误: {e.response.status_code}")
+            # raise HTTPException(status_code=e.response.status_code, detail=f"上传图片到 0x0.st 失败: {e.response.text}")
+        return base64_image
+
 if __name__ == "__main__":
     provider = {
         "base_url": "https://gateway.ai.cloudflare.com/v1/%7Baccount_id%7D/%7Bgateway_id%7D/google-vertex-ai",

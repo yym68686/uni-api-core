@@ -8,7 +8,7 @@ from datetime import datetime
 
 from .log_config import logger
 
-from .utils import safe_get, generate_sse_response, generate_no_stream_response, end_of_line, parse_json_safely
+from .utils import safe_get, generate_sse_response, generate_no_stream_response, end_of_line, parse_json_safely, upload_image_to_0x0st
 
 async def check_response(response, error_log):
     if response and not (200 <= response.status_code < 300):
@@ -277,7 +277,8 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
                     openrouter_reasoning = safe_get(line, "choices", 0, "delta", "reasoning", default="")
                     openrouter_base64_image = safe_get(line, "choices", 0, "delta", "images", 0, "image_url", "url", default="")
                     if openrouter_base64_image:
-                        sse_string = await generate_sse_response(timestamp, payload["model"], content=f"\n\n![image]({openrouter_base64_image})")
+                        image_url = await upload_image_to_0x0st(openrouter_base64_image)
+                        sse_string = await generate_sse_response(timestamp, payload["model"], content=f"\n\n![image]({image_url})")
                         yield sse_string
                         continue
                     azure_databricks_claude_summary_content = safe_get(line, "choices", 0, "delta", "content", 0, "summary", 0, "text", default="")
