@@ -228,7 +228,12 @@ async def update_initial_model(provider):
 def safe_get(data, *keys, default=None):
     for key in keys:
         try:
-            data = data[key] if isinstance(data, (dict, list)) else data.get(key)
+            if isinstance(data, (dict, list)):
+                data = data[key]
+            elif isinstance(key, str) and hasattr(data, key):
+                data = getattr(data, key)
+            else:
+                data = data.get(key)
         except (KeyError, IndexError, AttributeError, TypeError):
             return default
     if not data:

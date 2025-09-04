@@ -1,5 +1,6 @@
 import re
 import json
+import copy
 import httpx
 import base64
 import asyncio
@@ -57,7 +58,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     try:
         request_messages = [Message(role="user", content=request.prompt)]
     except:
-        request_messages = request.messages
+        request_messages = copy.deepcopy(request.messages)
     for msg in request_messages:
         if msg.role == "assistant":
             msg.role = "model"
