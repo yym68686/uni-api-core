@@ -400,7 +400,8 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
     systemInstruction = None
     system_prompt = ""
     function_arguments = None
-    for msg in request.messages:
+    request_messages = copy.deepcopy(request.messages)
+    for msg in request_messages:
         if msg.role == "assistant":
             msg.role = "model"
         tool_calls = None
