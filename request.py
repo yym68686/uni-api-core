@@ -244,7 +244,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 "Image",
             ]
 
-    if "gemini-2.5" in original_model:
+    if "gemini-2.5" in original_model and "gemini-2.5-flash-image" not in original_model:
         # 从请求模型名中检测思考预算设置
         m = re.match(r".*-think-(-?\d+)", request.model)
         if m:

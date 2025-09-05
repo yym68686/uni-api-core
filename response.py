@@ -78,7 +78,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                     try:
                         response_json = await asyncio.to_thread(json.loads, parts_json)
                     except json.JSONDecodeError:
-                        logger.error(f"JSON decode error: {parts_json}")
+                        # logger.error(f"JSON decode error: {parts_json}")
                         continue
                 else:
                     parts_json += line
@@ -99,7 +99,13 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                     yield sse_string
 
                 if image_base64:
-                    yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=totalTokenCount, prompt_tokens=promptTokenCount, completion_tokens=candidatesTokenCount, image_base64=image_base64)
+                    if "gemini-2.5-flash-image" not in model:
+                        yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=totalTokenCount, prompt_tokens=promptTokenCount, completion_tokens=candidatesTokenCount, image_base64=image_base64)
+                    else:
+                        image_url = await upload_image_to_0x0st("data:image/png;base64," + image_base64)
+                        sse_string = await generate_sse_response(timestamp, model, content=f"\n\n![image]({image_url})")
+                        yield sse_string
+                        continue
 
                 if function_call_name:
                     sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=function_call_name)
