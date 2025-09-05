@@ -105,7 +105,6 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                         image_url = await upload_image_to_0x0st("data:image/png;base64," + image_base64)
                         sse_string = await generate_sse_response(timestamp, model, content=f"\n\n![image]({image_url})")
                         yield sse_string
-                        continue
 
                 if function_call_name:
                     sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=function_call_name)
