@@ -1049,10 +1049,16 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         system_msg = messages.pop(0)
         messages[0]["content"] = system_msg["content"] + messages[0]["content"]
 
-    payload = {
-        "model": original_model,
-        "messages": messages,
-    }
+    if "v1/responses" in url:
+        payload = {
+            "model": original_model,
+            "input": messages,
+        }
+    else:
+        payload = {
+            "model": original_model,
+            "messages": messages,
+        }
 
     miss_fields = [
         'model',

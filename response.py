@@ -213,6 +213,10 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
 
         buffer = ""
         enter_buffer = ""
+
+        input_tokens = 0
+        output_tokens = 0
+
         async for chunk in response.aiter_text():
             buffer += chunk
             while "\n" in buffer:
@@ -221,11 +225,31 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
                 if line.startswith(": keepalive"):
                     yield line + end_of_line
                     continue
-                if line and not line.startswith(":") and (result:=line.lstrip("data: ").strip()):
+                if line and not line.startswith(":") and (result:=line.lstrip("data: ").strip()) and not line.startswith("event: "):
                     if result.strip() == "[DONE]":
                         break
                     line = await asyncio.to_thread(json.loads, result)
                     line['id'] = f"chatcmpl-{random_str}"
+
+                    # v1/responses
+                    if line.get("type") == "response.reasoning_summary_text.delta" and line.get("delta"):
+                        sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=line.get("delta"))
+                        yield sse_string
+                        continue
+                    elif line.get("type") == "response.output_text.delta" and line.get("delta"):
+                        sse_string = await generate_sse_response(timestamp, payload["model"], content=line.get("delta"))
+                        yield sse_string
+                        continue
+                    elif line.get("type") == "response.output_text.done":
+                        sse_string = await generate_sse_response(timestamp, payload["model"], stop="stop")
+                        yield sse_string
+                        continue
+                    elif line.get("type") == "response.completed":
+                        input_tokens = safe_get(line, "response", "usage", "input_tokens", default=0)
+                        output_tokens = safe_get(line, "response", "usage", "output_tokens", default=0)
+                        continue
+                    elif line.get("type", "").startswith("response."):
+                        continue
 
                     # 处理 <think> 标签
                     content = safe_get(line, "choices", 0, "delta", "content", default="")
@@ -322,6 +346,11 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
                             del line["choices"][0]["message"]
                         json_line = await asyncio.to_thread(json.dumps, line)
                         yield "data: " + json_line.strip() + end_of_line
+
+    if input_tokens and output_tokens:
+        sse_string = await generate_sse_response(timestamp, payload["model"], None, None, None, None, None, total_tokens=input_tokens + output_tokens, prompt_tokens=input_tokens, completion_tokens=output_tokens)
+        yield sse_string
+
     yield "data: [DONE]" + end_of_line
 
 async def fetch_azure_response_stream(client, url, headers, payload, timeout):
