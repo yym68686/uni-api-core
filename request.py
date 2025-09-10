@@ -1015,9 +1015,16 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
             for item in msg.content:
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
+                    if "v1/responses" in url:
+                        text_message["type"] = "input_text"
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True) and "o1-mini" not in original_model:
                     image_message = await get_image_message(item.image_url.url, engine)
+                    if "v1/responses" in url:
+                        image_message = {
+                            "type": "input_image",
+                            "image_url": image_message["image_url"]["url"]
+                        }
                     content.append(image_message)
         else:
             content = msg.content
@@ -1091,11 +1098,20 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
     "o3" in original_model or "o4" in original_model or \
     "gpt-oss" in original_model or "gpt-5" in original_model:
         if request.model.endswith("high"):
-            payload["reasoning_effort"] = "high"
+            if "v1/responses" in url:
+                payload["reasoning"] = {"effort": "high"}
+            else:
+                payload["reasoning_effort"] = "high"
         elif request.model.endswith("low"):
-            payload["reasoning_effort"] = "low"
+            if "v1/responses" in url:
+                payload["reasoning"] = {"effort": "low"}
+            else:
+                payload["reasoning_effort"] = "low"
         else:
-            payload["reasoning_effort"] = "medium"
+            if "v1/responses" in url:
+                payload["reasoning"] = {"effort": "medium"}
+            else:
+                payload["reasoning_effort"] = "medium"
 
         if "temperature" in payload:
             payload.pop("temperature")
