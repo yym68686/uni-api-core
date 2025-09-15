@@ -295,7 +295,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             if key == request.model:
                 for k, v in value.items():
                     payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key:
+            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
                 payload[key] = value
 
     return url, headers, payload
@@ -591,7 +591,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             if key == request.model:
                 for k, v in value.items():
                     payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key:
+            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
                 payload[key] = value
 
     return url, headers, payload
@@ -1152,7 +1152,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
             if key == request.model:
                 for k, v in value.items():
                     payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key:
+            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
                 payload[key] = value
 
     return url, headers, payload
@@ -1250,7 +1250,7 @@ async def get_azure_payload(request, engine, provider, api_key=None):
             if key == request.model:
                 for k, v in value.items():
                     payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key:
+            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
                 payload[key] = value
 
     return url, headers, payload
@@ -1370,7 +1370,7 @@ async def get_azure_databricks_payload(request, engine, provider, api_key=None):
             if key == request.model:
                 for k, v in value.items():
                     payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key:
+            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
                 payload[key] = value
 
     return url, headers, payload
@@ -1457,7 +1457,7 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
             if key == request.model:
                 for k, v in value.items():
                     payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key:
+            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
                 payload[key] = value
 
     return url, headers, payload
@@ -1823,7 +1823,7 @@ async def get_claude_payload(request, engine, provider, api_key=None):
             if key == request.model:
                 for k, v in value.items():
                     payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key:
+            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
                 payload[key] = value
 
     return url, headers, payload
