@@ -1116,6 +1116,9 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         if "temperature" in payload:
             payload.pop("temperature")
 
+        if "v1/responses" in url:
+            payload.pop("stream_options", None)
+
     # 代码生成/数学解题  0.0
     # 数据抽取/分析	     1.0
     # 通用对话          1.3
