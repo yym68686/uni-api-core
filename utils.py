@@ -52,7 +52,7 @@ class BaseAPI:
             self.v1_models: str = urlunparse(parsed_url[:2] + (before_v1 + "models",) + ("",) * 3)
 
         if "v1/responses" in parsed_url.path:
-            self.chat_url: str = urlunparse(parsed_url[:2] + ("v1/responses",) + ("",) * 3)
+            self.chat_url: str = api_url
         else:
             self.chat_url: str = urlunparse(parsed_url[:2] + (before_v1 + "chat/completions",) + ("",) * 3)
         self.image_url: str = urlunparse(parsed_url[:2] + (before_v1 + "images/generations",) + ("",) * 3)
