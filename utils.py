@@ -278,27 +278,32 @@ def parse_rate_limit(limit_string):
     return limits
 
 class ThreadSafeCircularList:
-    def __init__(self, items = [], rate_limit={"default": "999999/min"}, schedule_algorithm="round_robin"):
+    def __init__(self, items = [], rate_limit={"default": "999999/min"}, schedule_algorithm="round_robin", provider_name=None):
+        self.provider_name = provider_name
+        self.original_items = list(items)
+        self.schedule_algorithm = schedule_algorithm
+
         if schedule_algorithm == "random":
             import random
             self.items = random.sample(items, len(items))
-            self.schedule_algorithm = "random"
         elif schedule_algorithm == "round_robin":
             self.items = items
-            self.schedule_algorithm = "round_robin"
         elif schedule_algorithm == "fixed_priority":
             self.items = items
-            self.schedule_algorithm = "fixed_priority"
+        elif schedule_algorithm == "smart_round_robin":
+            self.items = items
         else:
             self.items = items
-            logger.warning(f"Unknown schedule algorithm: {schedule_algorithm}, use (round_robin, random, fixed_priority) instead")
+            logger.warning(f"Unknown schedule algorithm: {schedule_algorithm}, use (round_robin, random, fixed_priority, smart_round_robin) instead")
             self.schedule_algorithm = "round_robin"
+
         self.index = 0
         self.lock = asyncio.Lock()
-        # 修改为二级字典，第一级是item，第二级是model
         self.requests = defaultdict(lambda: defaultdict(list))
         self.cooling_until = defaultdict(float)
         self.rate_limits = {}
+        self.reordering_task = None
+
         if isinstance(rate_limit, dict):
             for rate_limit_model, rate_limit_value in rate_limit.items():
                 self.rate_limits[rate_limit_model] = parse_rate_limit(rate_limit_value)
@@ -306,6 +311,38 @@ class ThreadSafeCircularList:
             self.rate_limits["default"] = parse_rate_limit(rate_limit)
         else:
             logger.error(f"Error ThreadSafeCircularList: Unknown rate_limit type: {type(rate_limit)}, rate_limit: {rate_limit}")
+
+        if self.schedule_algorithm == "smart_round_robin":
+            logger.info(f"Initializing '{self.provider_name}' with 'smart_round_robin' algorithm.")
+            self._trigger_reorder()
+
+    async def reset_items(self, new_items: list):
+        """Safely replaces the current list of items with a new one."""
+        async with self.lock:
+            if self.items != new_items:
+                self.items = new_items
+                self.index = 0
+                logger.info(f"Provider '{self.provider_name}' API key list has been reset and reordered.")
+
+    def _trigger_reorder(self):
+        """Asynchronously triggers the reordering task if not already running."""
+        if self.provider_name and (self.reordering_task is None or self.reordering_task.done()):
+            logger.info(f"Triggering reorder for provider '{self.provider_name}'...")
+            try:
+                loop = asyncio.get_running_loop()
+                self.reordering_task = loop.create_task(self._reorder_keys())
+            except RuntimeError:
+                logger.warning(f"No running event loop to trigger reorder for '{self.provider_name}'.")
+
+    async def _reorder_keys(self):
+        """Performs the actual reordering logic."""
+        from utils import get_sorted_api_keys
+        try:
+            sorted_keys = await get_sorted_api_keys(self.provider_name, self.original_items, group_size=100)
+            if sorted_keys:
+                await self.reset_items(sorted_keys)
+        except Exception as e:
+            logger.error(f"Error during key reordering for provider '{self.provider_name}': {e}")
 
     async def set_cooling(self, item: str, cooling_time: int = 60):
         """设置某个 item 进入冷却状态
@@ -374,6 +411,11 @@ class ThreadSafeCircularList:
         async with self.lock:
             if self.schedule_algorithm == "fixed_priority":
                 self.index = 0
+
+            # 检查是否即将完成一个循环，并据此触发重排序
+            if self.schedule_algorithm == "smart_round_robin" and len(self.items) > 0 and self.index == len(self.items) - 1:
+                self._trigger_reorder()
+
             start_index = self.index
             while True:
                 item = self.items[self.index]
