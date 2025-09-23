@@ -16,7 +16,7 @@ from .utils import (
     c35s,
     c4,
     gemini1,
-    gemini2,
+    gemini_preview,
     gemini2_5_pro_exp,
     BaseAPI,
     safe_get,
@@ -375,7 +375,9 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
 
     # https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-0-flash?hl=zh-cn
     pro_models = ["gemini-2.5"]
-    if any(pro_model in original_model for pro_model in pro_models):
+    if "gemini-2.5-flash-image-preview" in original_model:
+        location = gemini_preview
+    elif any(pro_model in original_model for pro_model in pro_models):
         location = gemini2_5_pro_exp
     else:
         location = gemini1
