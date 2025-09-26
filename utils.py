@@ -4,12 +4,16 @@ import ast
 import json
 import httpx
 import base64
+import random
+import string
 import asyncio
+import traceback
 from time import time
 from PIL import Image
 from fastapi import HTTPException
-from urllib.parse import urlparse
 from collections import defaultdict
+from httpx_socks import AsyncProxyTransport
+from urllib.parse import urlparse, urlunparse
 
 from .log_config import logger
 
@@ -33,7 +37,6 @@ class BaseAPI:
         if api_url == "":
             api_url = "https://api.openai.com/v1/chat/completions"
         self.source_api_url: str = api_url
-        from urllib.parse import urlparse, urlunparse
         parsed_url = urlparse(self.source_api_url)
         # print("parsed_url", parsed_url)
         if parsed_url.scheme == "":
@@ -152,7 +155,6 @@ def get_engine(provider, endpoint=None, original_model=""):
 
     return engine, stream
 
-from httpx_socks import AsyncProxyTransport
 def get_proxy(proxy, client_config = {}):
     if proxy:
         # 解析代理URL
@@ -223,9 +225,7 @@ async def update_initial_model(provider):
         models_id = list(set_models)
         # print(models_id)
         return models_id
-    except Exception as e:
-        # print("error:", e)
-        import traceback
+    except Exception:
         traceback.print_exc()
         return []
 
@@ -284,7 +284,6 @@ class ThreadSafeCircularList:
         self.schedule_algorithm = schedule_algorithm
 
         if schedule_algorithm == "random":
-            import random
             self.items = random.sample(items, len(items))
         elif schedule_algorithm == "round_robin":
             self.items = items
@@ -351,7 +350,7 @@ class ThreadSafeCircularList:
             item: 需要冷却的 item
             cooling_time: 冷却时间(秒)，默认60秒
         """
-        if item == None:
+        if item is None:
             return
         now = time()
         async with self.lock:
@@ -426,7 +425,7 @@ class ThreadSafeCircularList:
 
                 # 如果已经检查了所有的 API key 都被限制
                 if self.index == start_index:
-                    logger.warning(f"All API keys are rate limited!")
+                    logger.warning("All API keys are rate limited!")
                     raise HTTPException(status_code=429, detail="Too many requests")
 
     async def is_tpr_exceeded(self, model: str = None, tokens: int = 0) -> bool:
@@ -557,8 +556,6 @@ end_of_line = "\n\n"
 # end_of_line = "\r"
 # end_of_line = "\n"
 
-import random
-import string
 async def generate_sse_response(timestamp, model, content=None, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=0, prompt_tokens=0, completion_tokens=0, reasoning_content=None, stop=None):
     random.seed(timestamp)
     random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=29))
@@ -696,7 +693,7 @@ def get_image_format(file_content: bytes):
     try:
         img = Image.open(io.BytesIO(file_content))
         return img.format.lower()
-    except:
+    except Exception:
         return None
 
 def encode_image(file_content: bytes):
