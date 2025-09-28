@@ -1,12 +1,23 @@
 import re
 import json
 import copy
+import hmac
+import time
 import httpx
 import base64
 import asyncio
+import hashlib
+import datetime
+import urllib.parse
 from io import IOBase
 from typing import Tuple
+from datetime import timezone
 from urllib.parse import urlparse
+
+
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
 from .models import RequestModel, Message
 from .utils import (
@@ -57,7 +68,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
 
     try:
         request_messages = [Message(role="user", content=request.prompt)]
-    except:
+    except Exception:
         request_messages = copy.deepcopy(request.messages)
     for msg in request_messages:
         if msg.role == "assistant":
@@ -299,11 +310,6 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 payload[key] = value
 
     return url, headers, payload
-
-import time
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
 def create_jwt(client_email, private_key):
     # JWT Header
@@ -756,17 +762,11 @@ async def get_vertex_claude_payload(request, engine, provider, api_key=None):
                         "type": "any"
                     }
 
-    if provider.get("tools") == False:
+    if provider.get("tools") is False:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
 
     return url, headers, payload
-
-import hashlib
-import hmac
-import datetime
-import urllib.parse
-from datetime import timezone
 
 def sign(key, msg):
     return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
@@ -839,7 +839,7 @@ async def get_aws_payload(request, engine, provider, api_key=None):
     url = f"{base_url}/model/{original_model}/invoke-with-response-stream"
 
     messages = []
-    system_prompt = None
+    # system_prompt = None
     tool_id = None
     for msg in request.messages:
         tool_call_id = None
@@ -889,8 +889,8 @@ async def get_aws_payload(request, engine, provider, api_key=None):
             }]})
         elif msg.role != "system":
             messages.append({"role": msg.role, "content": content})
-        elif msg.role == "system":
-            system_prompt = content
+        # elif msg.role == "system":
+        #     system_prompt = content
 
     conversation_len = len(messages) - 1
     message_index = 0
@@ -973,7 +973,7 @@ async def get_aws_payload(request, engine, provider, api_key=None):
                         "type": "any"
                     }
 
-    if provider.get("tools") == False:
+    if provider.get("tools") is False:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
 
@@ -1081,7 +1081,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
             else:
                 payload[field] = value
 
-    if provider.get("tools") == False or "o1-mini" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
+    if provider.get("tools") is False or "o1-mini" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
 
@@ -1243,7 +1243,7 @@ async def get_azure_payload(request, engine, provider, api_key=None):
             else:
                 payload[field] = value
 
-    if provider.get("tools") == False or "o1" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
+    if provider.get("tools") is False or "o1" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
 
@@ -1338,7 +1338,7 @@ async def get_azure_databricks_payload(request, engine, provider, api_key=None):
             else:
                 payload[field] = value
 
-    if provider.get("tools") == False or "o1" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
+    if provider.get("tools") is False or "o1" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
 
@@ -1628,7 +1628,7 @@ async def gpt2claude_tools_json(json_dict):
     for old_key, new_key in keys_to_change.items():
         if old_key in json_dict:
             if new_key:
-                if json_dict[old_key] == None:
+                if json_dict[old_key] is None:
                     json_dict[old_key] = {
                         "type": "object",
                         "properties": {}
@@ -1790,7 +1790,7 @@ async def get_claude_payload(request, engine, provider, api_key=None):
                         "type": "any"
                     }
 
-    if provider.get("tools") == False:
+    if provider.get("tools") is False:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
 
@@ -1869,8 +1869,6 @@ async def get_upload_certificate(client: httpx.AsyncClient, api_key: str, model:
     except Exception as e:
         print(f"获取凭证时发生未知错误: {e}")
         return None
-
-from mimetypes import guess_type
 
 async def upload_file_to_oss(client: httpx.AsyncClient, certificate: dict, file: Tuple[str, IOBase, str]) -> str:
     """第二步：使用凭证将文件内容上传到OSS"""
