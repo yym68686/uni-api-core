@@ -165,7 +165,7 @@ class AudioTranscriptionRequest(BaseRequest):
 
 class ModerationRequest(BaseRequest):
     input: Union[str, List[str]]
-    model: Optional[str] = "text-moderation-latest"
+    model: Optional[str] = "omni-moderation-latest"
     stream: bool = False
 
 class TextToSpeechRequest(BaseRequest):
