@@ -1109,11 +1109,11 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
                 payload["reasoning"] = {"effort": "low"}
             else:
                 payload["reasoning_effort"] = "low"
-        else:
-            if "v1/responses" in url:
-                payload["reasoning"] = {"effort": "medium"}
-            else:
-                payload["reasoning_effort"] = "medium"
+        # else:
+        #     if "v1/responses" in url:
+        #         payload["reasoning"] = {"effort": "medium"}
+        #     else:
+        #         payload["reasoning_effort"] = "medium"
 
         if "temperature" in payload:
             payload.pop("temperature")
