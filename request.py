@@ -616,7 +616,7 @@ async def get_vertex_claude_payload(request, engine, provider, api_key=None):
 
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
-    if "claude-3-5-sonnet" in original_model or "claude-3-7-sonnet" in original_model:
+    if "claude-3-5-sonnet" in original_model or "claude-3-7-sonnet" in original_model or "4-5@" in original_model:
         location = c35s
     elif "claude-3-opus" in original_model:
         location = c3o
