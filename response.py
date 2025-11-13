@@ -639,7 +639,7 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         timestamp = int(datetime.timestamp(datetime.now()))
         yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=function_call_name, function_call_content=function_call_content, role=role, total_tokens=total_tokens, prompt_tokens=prompt_tokens, completion_tokens=candidates_tokens, reasoning_content=reasoning_content, image_base64=image_base64)
 
-    elif engine == "claude":
+    elif engine == "claude" or engine == "vertex-claude":
         response_bytes = await response.aread()
         response_json = await asyncio.to_thread(json.loads, response_bytes)
         # print("response_json", json.dumps(response_json, indent=4, ensure_ascii=False))
