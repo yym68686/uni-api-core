@@ -381,14 +381,15 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
 
     # https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-0-flash?hl=zh-cn
     pro_models = ["gemini-2.5"]
-    if "gemini-2.5-flash-image-preview" in original_model:
+    global_models = ["gemini-2.5-flash-image-preview", "gemini-3-pro-preview"]
+    if any(global_model in original_model for global_model in global_models):
         location = gemini_preview
     elif any(pro_model in original_model for pro_model in pro_models):
         location = gemini2_5_pro_exp
     else:
         location = gemini1
 
-    if "google-vertex-ai" in provider.get("base_url", "") or "gemini-2.5-flash-image-preview" in original_model:
+    if "google-vertex-ai" in provider.get("base_url", "") or any(global_model in original_model for global_model in global_models):
         url = provider.get("base_url").rstrip('/') + "/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(
             LOCATION=await location.next(),
             PROJECT_ID=project_id,
