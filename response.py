@@ -99,7 +99,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                     yield sse_string
 
                 if image_base64:
-                    if "gemini-2.5-flash-image" not in model:
+                    if "gemini-2.5-flash-image" not in model and "gemini-3-pro-image" not in model:
                         yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=totalTokenCount, prompt_tokens=promptTokenCount, completion_tokens=candidatesTokenCount, image_base64=image_base64)
                     else:
                         image_url = await upload_image_to_0x0st("data:image/png;base64," + image_base64)
