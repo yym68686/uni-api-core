@@ -37,7 +37,7 @@ from .utils import (
     get_image_message,
 )
 
-gemini_max_token_65k_models = ["gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking", "gemini-2.5-flash"]
+gemini_max_token_65k_models = ["gemini-3-pro", "gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking", "gemini-2.5-flash"]
 
 async def get_gemini_payload(request, engine, provider, api_key=None):
     headers = {
@@ -128,7 +128,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     if system_prompt.strip():
         systemInstruction = {"parts": [{"text": system_prompt}]}
 
-    if any(off_model in original_model for off_model in gemini_max_token_65k_models) or original_model.endswith("-image-generation"):
+    if any(off_model in original_model for off_model in gemini_max_token_65k_models) or "-image" in original_model:
         safety_settings = "OFF"
     else:
         safety_settings = "BLOCK_NONE"
@@ -207,7 +207,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
 
     for field, value in request.model_dump(exclude_unset=True).items():
         if field not in miss_fields and value is not None:
-            if field == "tools" and ("gemini-2.0-flash-thinking" in original_model or "gemini-2.5-flash-image" in original_model or "gemini-3-pro-image" in original_model):
+            if field == "tools" and ("gemini-2.0-flash-thinking" in original_model or "-image" in original_model):
                 continue
             if field == "tools":
                 # 处理每个工具的 function 定义
@@ -232,9 +232,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                         }
                     })
             elif field == "temperature":
-                if "gemini-2.5-flash-image" in original_model:
-                    value = 1
-                if "gemini-3-pro-image" in original_model:
+                if "-image" in original_model:
                     value = 1
                 generation_config["temperature"] = value
             elif field == "max_tokens":
@@ -253,13 +251,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
 
-        if original_model.endswith("-image-generation"):
-            payload["generationConfig"]["response_modalities"] = [
-                "Text",
-                "Image",
-            ]
-
-    if "gemini-2.5" in original_model and "gemini-2.5-flash-image" not in original_model and "gemini-3-pro-image" not in original_model:
+    if "gemini-2.5" in original_model and "-image" not in original_model:
         # 从请求模型名中检测思考预算设置
         m = re.match(r".*-think-(-?\d+)", request.model)
         if m:
