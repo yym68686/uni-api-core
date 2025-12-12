@@ -1015,7 +1015,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
                     if "v1/responses" in url:
                         text_message["type"] = "input_text"
                     content.append(text_message)
-                elif item.type == "image_url" and provider.get("image", True) and "o1-mini" not in original_model:
+                elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
                     if "v1/responses" in url:
                         image_message = {
@@ -1049,10 +1049,6 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         else:
             messages.append({"role": msg.role, "content": content})
 
-    if ("o1-mini" in original_model or "o1-preview" in original_model) and len(messages) > 1 and messages[0]["role"] == "system":
-        system_msg = messages.pop(0)
-        messages[0]["content"] = system_msg["content"] + messages[0]["content"]
-
     if "v1/responses" in url:
         payload = {
             "model": original_model,
@@ -1071,12 +1067,12 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
 
     for field, value in request.model_dump(exclude_unset=True).items():
         if field not in miss_fields and value is not None:
-            if field == "max_tokens" and ("o1" in original_model or "o3" in original_model or "o4" in original_model or "gpt-5" in original_model):
+            if field == "max_tokens" and "gpt-5" in original_model:
                 payload["max_completion_tokens"] = value
             else:
                 payload[field] = value
 
-    if provider.get("tools") is False or "o1-mini" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
+    if provider.get("tools") is False or "chatgpt-4o-latest" in original_model or "grok" in original_model:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
 
@@ -1094,9 +1090,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         elif request.model.endswith("low"):
             payload["reasoning_effort"] = "low"
 
-    if "o1" in original_model or \
-    "o3" in original_model or "o4" in original_model or \
-    "gpt-oss" in original_model or "gpt-5" in original_model:
+    if "gpt-oss" in original_model or "gpt-5" in original_model:
         if request.model.endswith("high"):
             if "v1/responses" in url:
                 payload["reasoning"] = {"effort": "high"}
@@ -1197,7 +1191,7 @@ async def get_azure_payload(request, engine, provider, api_key=None):
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
                     content.append(text_message)
-                elif item.type == "image_url" and provider.get("image", True) and "o1-mini" not in original_model:
+                elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
                     content.append(image_message)
         else:
@@ -1236,12 +1230,12 @@ async def get_azure_payload(request, engine, provider, api_key=None):
 
     for field, value in request.model_dump(exclude_unset=True).items():
         if field not in miss_fields and value is not None:
-            if field == "max_tokens" and "o1" in original_model:
+            if field == "max_tokens" and "gpt-5" in original_model:
                 payload["max_completion_tokens"] = value
             else:
                 payload[field] = value
 
-    if provider.get("tools") is False or "o1" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
+    if provider.get("tools") is False or "chatgpt-4o-latest" in original_model or "grok" in original_model:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
 
@@ -1277,7 +1271,7 @@ async def get_azure_databricks_payload(request, engine, provider, api_key=None):
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
                     content.append(text_message)
-                elif item.type == "image_url" and provider.get("image", True) and "o1-mini" not in original_model:
+                elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
                     content.append(image_message)
         else:
@@ -1331,12 +1325,12 @@ async def get_azure_databricks_payload(request, engine, provider, api_key=None):
 
     for field, value in request.model_dump(exclude_unset=True).items():
         if field not in miss_fields and value is not None:
-            if field == "max_tokens" and "o1" in original_model:
+            if field == "max_tokens" and "gpt-5" in original_model:
                 payload["max_completion_tokens"] = value
             else:
                 payload[field] = value
 
-    if provider.get("tools") is False or "o1" in original_model or "chatgpt-4o-latest" in original_model or "grok" in original_model:
+    if provider.get("tools") is False or "chatgpt-4o-latest" in original_model or "grok" in original_model:
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
 
