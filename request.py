@@ -1067,7 +1067,9 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
 
     for field, value in request.model_dump(exclude_unset=True).items():
         if field not in miss_fields and value is not None:
-            if field == "max_tokens" and "gpt-5" in original_model:
+            if field == "max_tokens" and "v1/responses" in url:
+                payload["max_output_tokens"] = value
+            elif field == "max_tokens" and "gpt-5" in original_model:
                 payload["max_completion_tokens"] = value
             else:
                 payload[field] = value
@@ -1230,7 +1232,9 @@ async def get_azure_payload(request, engine, provider, api_key=None):
 
     for field, value in request.model_dump(exclude_unset=True).items():
         if field not in miss_fields and value is not None:
-            if field == "max_tokens" and "gpt-5" in original_model:
+            if field == "max_tokens" and "v1/responses" in url:
+                payload["max_output_tokens"] = value
+            elif field == "max_tokens" and "gpt-5" in original_model:
                 payload["max_completion_tokens"] = value
             else:
                 payload[field] = value
@@ -1325,7 +1329,9 @@ async def get_azure_databricks_payload(request, engine, provider, api_key=None):
 
     for field, value in request.model_dump(exclude_unset=True).items():
         if field not in miss_fields and value is not None:
-            if field == "max_tokens" and "gpt-5" in original_model:
+            if field == "max_tokens" and "v1/responses" in url:
+                payload["max_output_tokens"] = value
+            elif field == "max_tokens" and "gpt-5" in original_model:
                 payload["max_completion_tokens"] = value
             else:
                 payload[field] = value
