@@ -1085,6 +1085,9 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         payload.pop("presence_penalty", None)
         payload.pop("frequency_penalty", None)
 
+    if "gpt-5.2" in original_model:
+        payload.pop("top_p", None)
+
     if "grok-3-mini" in original_model:
         if request.model.endswith("high"):
             payload["reasoning_effort"] = "high"
