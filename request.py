@@ -251,6 +251,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
 
+    # Gemini 2.5 系列的 thinkingConfig 处理
     if "gemini-2.5" in original_model and "-image" not in original_model:
         # 从请求模型名中检测思考预算设置
         m = re.match(r".*-think-(-?\d+)", request.model)
@@ -294,6 +295,21 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["thinkingConfig"] = {
                 "includeThoughts": True,
             }
+
+    # Gemini 3 系列的 thinkingLevel 处理
+    if "gemini-3" in original_model:
+        thinking_level = None
+
+        # 从模型名中提取 thinking level (如 gemini-3-pro-low, gemini-3-flash-minimal)
+        level_match = re.search(r"-(low|high|minimal|medium)$", request.model.lower())
+        if level_match:
+            thinking_level = level_match.group(1)
+
+        # 如果找到了 thinking level，添加到 generationConfig
+        if thinking_level:
+            if "thinkingConfig" not in payload["generationConfig"]:
+                payload["generationConfig"]["thinkingConfig"] = {}
+            payload["generationConfig"]["thinkingConfig"]["thinkingLevel"] = thinking_level
 
     if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
         for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
@@ -545,6 +561,8 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         else:
             payload["generationConfig"]["max_output_tokens"] = 8192
 
+    # Gemini 2.5 系列的 thinkingConfig 处理
+    # Gemini 2.5 系列的 thinkingConfig 处理
     if "gemini-2.5" in original_model:
         # 从请求模型名中检测思考预算设置
         m = re.match(r".*-think-(-?\d+)", request.model)
@@ -588,6 +606,21 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["thinkingConfig"] = {
                 "includeThoughts": True,
             }
+
+    # Gemini 3 系列的 thinkingLevel 处理
+    if "gemini-3" in original_model:
+        thinking_level = None
+
+        # 从模型名中提取 thinking level (如 gemini-3-pro-low, gemini-3-flash-minimal)
+        level_match = re.search(r"-(low|high|minimal|medium)$", request.model.lower())
+        if level_match:
+            thinking_level = level_match.group(1)
+
+        # 如果找到了 thinking level，添加到 generationConfig
+        if thinking_level:
+            if "thinkingConfig" not in payload["generationConfig"]:
+                payload["generationConfig"]["thinkingConfig"] = {}
+            payload["generationConfig"]["thinkingConfig"]["thinkingLevel"] = thinking_level
 
     if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
         for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
