@@ -300,10 +300,48 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     if "gemini-3" in original_model:
         thinking_level = None
 
-        # 从模型名中提取 thinking level (如 gemini-3-pro-low, gemini-3-flash-minimal)
-        level_match = re.search(r"-(low|high|minimal|medium)$", request.model.lower())
-        if level_match:
-            thinking_level = level_match.group(1)
+        # 先尝试从模型名中提取数值型 thinking budget (如 gemini-3-pro-think-8192)
+        m = re.match(r".*-think-(-?\d+)", request.model)
+        if m:
+            try:
+                val = int(m.group(1))
+
+                # gemini-3-pro: 只支持 low/high 两档
+                # 将 32768 按 40% 分界
+                if "gemini-3-pro" in original_model:
+                    if val <= 32768*0.4:
+                        thinking_level = "low"
+                    else:  # > 32768*0.4:
+                        thinking_level = "high"
+
+                # gemini-3-flash: 支持 minimal/low/medium/high 四档
+                # 将 32768 分成四个区间
+                else:
+                    if val <= 32768*0.1:
+                        thinking_level = "minimal"
+                    elif val <= 32768*0.3:
+                        thinking_level = "low"
+                    elif val <= 32768*0.6:
+                        thinking_level = "medium"
+                    else:  # > 32768*0.6
+                        thinking_level = "high"
+            except ValueError:
+                pass
+
+        # 如果没有数值型，则从模型名中提取字符串型 thinking level (如 gemini-3-pro-low, gemini-3-flash-minimal)
+        if not thinking_level:
+            level_match = re.search(r"-(minimal|low|medium|high)$", request.model.lower())
+            if level_match:
+                level_str = level_match.group(1)
+
+                # Pro 只支持 low/high，如果是其他值则映射
+                if "gemini-3-pro" in original_model:
+                    if level_str in ["minimal", "low", "medium"]:
+                        thinking_level = "low"
+                    else:
+                        thinking_level = "high"
+                else:
+                    thinking_level = level_str
 
         # 如果找到了 thinking level，添加到 generationConfig
         if thinking_level:
@@ -611,10 +649,48 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
     if "gemini-3" in original_model:
         thinking_level = None
 
-        # 从模型名中提取 thinking level (如 gemini-3-pro-low, gemini-3-flash-minimal)
-        level_match = re.search(r"-(low|high|minimal|medium)$", request.model.lower())
-        if level_match:
-            thinking_level = level_match.group(1)
+        # 先尝试从模型名中提取数值型 thinking budget (如 gemini-3-pro-think-8192)
+        m = re.match(r".*-think-(-?\d+)", request.model)
+        if m:
+            try:
+                val = int(m.group(1))
+
+                # gemini-3-pro: 只支持 low/high 两档
+                # 将 32768 按 40% 分界
+                if "gemini-3-pro" in original_model:
+                    if val <= 32768 * 0.4:
+                        thinking_level = "low"
+                    else:  # > 32768*0.4
+                        thinking_level = "high"
+
+                # gemini-3-flash: 支持 minimal/low/medium/high 四档
+                # 将 32768 分成四个区间
+                else:
+                    if val <= 32768 * 0.1:
+                        thinking_level = "minimal"
+                    elif val <= 32768 * 0.3:
+                        thinking_level = "low"
+                    elif val <= 32768 * 0.6:
+                        thinking_level = "medium"
+                    else:  # > 32768*0.6
+                        thinking_level = "high"
+            except ValueError:
+                pass
+
+        # 如果没有数值型，则从模型名中提取字符串型 thinking level (如 gemini-3-pro-low, gemini-3-flash-minimal)
+        if not thinking_level:
+            level_match = re.search(r"-(minimal|low|medium|high)$", request.model.lower())
+            if level_match:
+                level_str = level_match.group(1)
+
+                # Pro 只支持 low/high，如果是其他值则映射
+                if "gemini-3-pro" in original_model:
+                    if level_str in ["minimal", "low", "medium"]:
+                        thinking_level = "low"
+                    else:
+                        thinking_level = "high"
+                else:
+                    thinking_level = level_str
 
         # 如果找到了 thinking level，添加到 generationConfig
         if thinking_level:
