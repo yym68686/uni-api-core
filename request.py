@@ -600,7 +600,6 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["max_output_tokens"] = 8192
 
     # Gemini 2.5 系列的 thinkingConfig 处理
-    # Gemini 2.5 系列的 thinkingConfig 处理
     if "gemini-2.5" in original_model:
         # 从请求模型名中检测思考预算设置
         m = re.match(r".*-think-(-?\d+)", request.model)
