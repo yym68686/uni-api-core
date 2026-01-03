@@ -195,7 +195,7 @@ async def fetch_vertex_claude_response_stream(client, url, headers, payload, mod
                     json_data = parse_json_safely( "{" + line + "}")
                     totalTokenCount = json_data.get('totalTokenCount', 0)
 
-                if line and '\"text\": \"' in line and is_finish == False:
+                if line and '\"text\": \"' in line and not is_finish:
                     try:
                         json_data = await asyncio.to_thread(json.loads, "{" + line.strip().rstrip(",") + "}")
                         content = json_data.get('text', '')
@@ -369,7 +369,7 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
 
                         sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=openrouter_reasoning)
                         yield sse_string
-                    elif no_stream_content and has_send_thinking == False:
+                    elif no_stream_content and not has_send_thinking:
                         sse_string = await generate_sse_response(safe_get(line, "created", default=None), safe_get(line, "model", default=None), content=no_stream_content)
                         yield sse_string
                     else:
@@ -484,7 +484,7 @@ async def fetch_cohere_response_stream(client, url, headers, payload, model, tim
                 line, buffer = buffer.split("\n", 1)
                 # logger.info("line: %s", repr(line))
                 resp: dict = await asyncio.to_thread(json.loads, line)
-                if resp.get("is_finished") == True:
+                if resp.get("is_finished"):
                     break
                 if resp.get("event_type") == "text-generation":
                     message = resp.get("text")
