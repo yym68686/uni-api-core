@@ -14,7 +14,6 @@ from .utils import (
     generate_no_stream_response,
     end_of_line,
     parse_json_safely,
-    upload_image_to_0x0st,
     gemini_audio_inline_data_to_wav_base64,
 )
 
@@ -114,8 +113,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                     if "gemini-2.5-flash-image" not in model and "gemini-3-pro-image" not in model:
                         yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=totalTokenCount, prompt_tokens=promptTokenCount, completion_tokens=candidatesTokenCount, image_base64=image_base64)
                     else:
-                        image_url = await upload_image_to_0x0st("data:image/png;base64," + image_base64)
-                        sse_string = await generate_sse_response(timestamp, model, content=f"\n\n![image]({image_url})")
+                        sse_string = await generate_sse_response(timestamp, model, content=f"\n![image](data:image/png;base64,{image_base64})")
                         yield sse_string
                 if audio_b64_wav:
                     audio_obj = {
@@ -339,8 +337,8 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
                     openrouter_reasoning = safe_get(line, "choices", 0, "delta", "reasoning", default="")
                     openrouter_base64_image = safe_get(line, "choices", 0, "delta", "images", 0, "image_url", "url", default="")
                     if openrouter_base64_image:
-                        image_url = await upload_image_to_0x0st(openrouter_base64_image)
-                        sse_string = await generate_sse_response(timestamp, payload["model"], content=f"\n\n![image]({image_url})")
+                        image_data_url = openrouter_base64_image if openrouter_base64_image.startswith("data:") else f"data:image/png;base64,{openrouter_base64_image}"
+                        sse_string = await generate_sse_response(timestamp, payload["model"], content=f"\n![image]({image_data_url})")
                         yield sse_string
                         continue
                     azure_databricks_claude_summary_content = safe_get(line, "choices", 0, "delta", "content", 0, "summary", 0, "text", default="")
