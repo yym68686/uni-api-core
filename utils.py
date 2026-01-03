@@ -8,6 +8,7 @@ import random
 import string
 import asyncio
 import traceback
+import wave
 from time import time
 from PIL import Image
 from fastapi import HTTPException
@@ -76,6 +77,7 @@ class BaseAPI:
             self.base_url = api_url
             self.v1_url = api_url
             self.chat_url = api_url
+            self.audio_speech = api_url
             self.embeddings = urlunparse(parsed_url[:2] + (before_v1 + "/v1beta/embeddings",) + ("",) * 3)
 
 def get_engine(provider, endpoint=None, original_model=""):
@@ -599,7 +601,7 @@ async def generate_sse_response(timestamp, model, content=None, tools_id=None, f
 
     return sse_response
 
-async def generate_no_stream_response(timestamp, model, content=None, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=0, prompt_tokens=0, completion_tokens=0, reasoning_content=None, image_base64=None):
+async def generate_no_stream_response(timestamp, model, content=None, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=0, prompt_tokens=0, completion_tokens=0, reasoning_content=None, image_base64=None, audio=None):
     random.seed(timestamp)
     random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=29))
     message = {
@@ -607,6 +609,11 @@ async def generate_no_stream_response(timestamp, model, content=None, tools_id=N
         "content": content,
         "refusal": None
     }
+    if audio is not None:
+        if message.get("content") == "":
+            message["content"] = None
+        message["audio"] = audio
+        message["annotations"] = []
     if reasoning_content:
         message["reasoning_content"] = reasoning_content
 
@@ -685,6 +692,48 @@ async def generate_no_stream_response(timestamp, model, content=None, tools_id=N
     # print("json_data", json.dumps(sample_data, indent=4, ensure_ascii=False))
 
     return json_data
+
+def _parse_gemini_audio_rate(mime_type: str) -> int | None:
+    if not mime_type:
+        return None
+    m = re.search(r"rate=(\\d+)", mime_type)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return None
+
+def gemini_audio_inline_data_to_wav_base64(mime_type: str, data_base64: str) -> str | None:
+    """
+    Converts Gemini inlineData audio (commonly PCM/L16) to WAV base64 (RIFF).
+    Returns None if conversion isn't possible.
+    """
+    if not mime_type or not data_base64:
+        return None
+    if not mime_type.lower().startswith("audio/"):
+        return None
+    # Only handle PCM/L16 inputs reliably.
+    if "l16" not in mime_type.lower() or "pcm" not in mime_type.lower():
+        return None
+    sample_rate = _parse_gemini_audio_rate(mime_type) or 24000
+    try:
+        # Gemini responses can be huge; some logs/samples may truncate base64. Make decoding resilient.
+        trimmed = data_base64
+        while len(trimmed) % 4 == 1:
+            trimmed = trimmed[:-1]
+        padded = trimmed + ("=" * ((4 - (len(trimmed) % 4)) % 4))
+        pcm_bytes = base64.b64decode(padded)
+    except Exception:
+        return None
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_bytes)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 def get_image_format(file_content: bytes):
     try:

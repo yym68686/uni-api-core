@@ -8,7 +8,15 @@ from datetime import datetime
 
 from .log_config import logger
 
-from .utils import safe_get, generate_sse_response, generate_no_stream_response, end_of_line, parse_json_safely, upload_image_to_0x0st
+from .utils import (
+    safe_get,
+    generate_sse_response,
+    generate_no_stream_response,
+    end_of_line,
+    parse_json_safely,
+    upload_image_to_0x0st,
+    gemini_audio_inline_data_to_wav_base64,
+)
 
 async def check_response(response, error_log):
     if response and not (200 <= response.status_code < 300):
@@ -26,6 +34,7 @@ async def gemini_json_poccess(response_json):
     candidatesTokenCount = 0
     totalTokenCount = 0
     image_base64 = None
+    audio_b64_wav = None
 
     json_data = safe_get(response_json, "candidates", 0, "content", default=None)
     finishReason = safe_get(response_json, "candidates", 0 , "finishReason", default=None)
@@ -37,9 +46,12 @@ async def gemini_json_poccess(response_json):
             logger.error(f"finishReason: {finishReason}")
 
     content = reasoning_content = safe_get(json_data, "parts", 0, "text", default="")
-    b64_json = safe_get(json_data, "parts", 0, "inlineData", "data", default="")
-    if b64_json:
-        image_base64 = b64_json
+    inline_mime = safe_get(json_data, "parts", 0, "inlineData", "mimeType", default="") or ""
+    inline_b64 = safe_get(json_data, "parts", 0, "inlineData", "data", default="") or ""
+    if inline_b64 and inline_mime.lower().startswith("image/"):
+        image_base64 = inline_b64
+    elif inline_b64 and inline_mime.lower().startswith("audio/"):
+        audio_b64_wav = gemini_audio_inline_data_to_wav_base64(inline_mime, inline_b64)
 
     is_thinking = safe_get(json_data, "parts", 0, "thought", default=False)
     if is_thinking:
@@ -51,7 +63,7 @@ async def gemini_json_poccess(response_json):
 
     blockReason = safe_get(json_data, 0, "promptFeedback", "blockReason", default=None)
 
-    return is_thinking, reasoning_content, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount
+    return is_thinking, reasoning_content, content, image_base64, audio_b64_wav, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount
 
 async def fetch_gemini_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
@@ -89,7 +101,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                         continue
 
                 # https://ai.google.dev/api/generate-content?hl=zh-cn#FinishReason
-                is_thinking, reasoning_content, content, image_base64, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = await gemini_json_poccess(response_json)
+                is_thinking, reasoning_content, content, image_base64, audio_b64_wav, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = await gemini_json_poccess(response_json)
 
                 if is_thinking:
                     sse_string = await generate_sse_response(timestamp, model, reasoning_content=reasoning_content)
@@ -105,6 +117,27 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                         image_url = await upload_image_to_0x0st("data:image/png;base64," + image_base64)
                         sse_string = await generate_sse_response(timestamp, model, content=f"\n\n![image]({image_url})")
                         yield sse_string
+                if audio_b64_wav:
+                    audio_obj = {
+                        "id": f"audio_{random.randint(10**7, 10**8-1)}",
+                        "data": audio_b64_wav,
+                        "expires_at": None,
+                        "transcript": content or None,
+                        "format": "wav",
+                    }
+                    yield await generate_no_stream_response(
+                        timestamp,
+                        model,
+                        content=content or None,
+                        tools_id=None,
+                        function_call_name=None,
+                        function_call_content=None,
+                        role="assistant",
+                        total_tokens=totalTokenCount,
+                        prompt_tokens=promptTokenCount,
+                        completion_tokens=candidatesTokenCount,
+                        audio=audio_obj,
+                    )
 
                 if function_call_name:
                     sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=function_call_name)
@@ -602,12 +635,16 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         content = ""
         reasoning_content = ""
         image_base64 = ""
+        audio_b64_wav = None
         parts_list = safe_get(parsed_data, 0, "candidates", 0, "content", "parts", default=[])
         for item in parts_list:
             chunk = safe_get(item, "text")
-            b64_json = safe_get(item, "inlineData", "data", default="")
-            if b64_json:
-                image_base64 = b64_json
+            inline_mime = safe_get(item, "inlineData", "mimeType", default="") or ""
+            inline_b64 = safe_get(item, "inlineData", "data", default="") or ""
+            if inline_b64 and inline_mime.lower().startswith("image/"):
+                image_base64 = inline_b64
+            elif inline_b64 and inline_mime.lower().startswith("audio/"):
+                audio_b64_wav = gemini_audio_inline_data_to_wav_base64(inline_mime, inline_b64) or audio_b64_wav
             is_think = safe_get(item, "thought", default=False)
             # logger.info(f"chunk: {repr(chunk)}")
             if chunk:
@@ -637,7 +674,33 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         function_call_content = safe_get(parsed_data, -1, "candidates", 0, "content", "parts", function_message_parts_index, "functionCall", "args", default=None)
 
         timestamp = int(datetime.timestamp(datetime.now()))
-        yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=function_call_name, function_call_content=function_call_content, role=role, total_tokens=total_tokens, prompt_tokens=prompt_tokens, completion_tokens=candidates_tokens, reasoning_content=reasoning_content, image_base64=image_base64)
+        audio_obj = None
+        if audio_b64_wav:
+            audio_obj = {
+                "id": f"audio_{random.randint(10**7, 10**8-1)}",
+                "data": audio_b64_wav,
+                "expires_at": None,
+                "transcript": content or None,
+                "format": "wav",
+            }
+            if not content:
+                content = None
+
+        yield await generate_no_stream_response(
+            timestamp,
+            model,
+            content=content,
+            tools_id=None,
+            function_call_name=function_call_name,
+            function_call_content=function_call_content,
+            role=role,
+            total_tokens=total_tokens,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=candidates_tokens,
+            reasoning_content=reasoning_content,
+            image_base64=image_base64,
+            audio=audio_obj,
+        )
 
     elif engine == "claude" or engine == "vertex-claude":
         response_bytes = await response.aread()

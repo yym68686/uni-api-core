@@ -39,6 +39,25 @@ from .utils import (
 
 gemini_max_token_65k_models = ["gemini-3-pro", "gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking", "gemini-2.5-flash"]
 
+def _gemini_response_modalities(original_model: str, request_modalities: list[str] | None, has_audio: bool) -> list[str] | None:
+    # For Gemini preview TTS models, request AUDIO-only to match official API behavior.
+    if "preview-tts" in (original_model or "").lower():
+        return ["AUDIO"]
+    if not request_modalities and not has_audio:
+        return None
+    modalities = request_modalities or []
+    mapped = []
+    for m in modalities:
+        if not m:
+            continue
+        if str(m).lower() == "text":
+            mapped.append("TEXT")
+        elif str(m).lower() == "audio":
+            mapped.append("AUDIO")
+    if has_audio and "AUDIO" not in mapped:
+        mapped.append("AUDIO")
+    return mapped or None
+
 async def get_gemini_payload(request, engine, provider, api_key=None):
     headers = {
         'Content-Type': 'application/json'
@@ -184,6 +203,9 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         'stream_options',
         'prompt',
         'size',
+        # OpenAI-style audio fields (mapped into generationConfig for Gemini)
+        'modalities',
+        'audio',
     ]
     generation_config = {}
 
@@ -251,8 +273,28 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         else:
             payload["generationConfig"]["maxOutputTokens"] = 8192
 
+    # Map OpenAI-style audio request fields to Gemini TTS/generateContent config.
+    response_modalities = _gemini_response_modalities(
+        original_model=original_model,
+        request_modalities=getattr(request, "modalities", None),
+        has_audio=bool(getattr(request, "audio", None)),
+    )
+    if response_modalities:
+        payload["generationConfig"]["responseModalities"] = response_modalities
+        if "AUDIO" in response_modalities:
+            voice_name = getattr(getattr(request, "audio", None), "voice", None) or "Kore"
+            payload["generationConfig"]["speechConfig"] = {
+                "voiceConfig": {
+                    "prebuiltVoiceConfig": {
+                        "voiceName": voice_name
+                    }
+                }
+            }
+            payload.setdefault("model", original_model)
+
     # Gemini 2.5 系列的 thinkingConfig 处理
-    if "gemini-2.5" in original_model and "-image" not in original_model:
+    # Note: preview TTS models do not support thinkingConfig.
+    if "gemini-2.5" in original_model and "-image" not in original_model and "preview-tts" not in original_model.lower():
         # 从请求模型名中检测思考预算设置
         m = re.match(r".*-think-(-?\d+)", request.model)
         if m:
@@ -565,6 +607,9 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         'stream_options',
         'prompt',
         'size',
+        # OpenAI-style audio fields (mapped into generationConfig for Gemini)
+        'modalities',
+        'audio',
     ]
     generation_config = {}
 
@@ -600,7 +645,8 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["max_output_tokens"] = 8192
 
     # Gemini 2.5 系列的 thinkingConfig 处理
-    if "gemini-2.5" in original_model:
+    # Note: preview TTS models do not support thinkingConfig.
+    if "gemini-2.5" in original_model and "preview-tts" not in original_model.lower():
         # 从请求模型名中检测思考预算设置
         m = re.match(r".*-think-(-?\d+)", request.model)
         if m:
@@ -704,6 +750,27 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                     payload[k] = v
             elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
                 payload[key] = value
+
+    # Map OpenAI-style audio request fields to Gemini TTS/generateContent config.
+    if "generationConfig" not in payload:
+        payload["generationConfig"] = {}
+    response_modalities = _gemini_response_modalities(
+        original_model=original_model,
+        request_modalities=getattr(request, "modalities", None),
+        has_audio=bool(getattr(request, "audio", None)),
+    )
+    if response_modalities:
+        payload["generationConfig"]["responseModalities"] = response_modalities
+        if "AUDIO" in response_modalities:
+            voice_name = getattr(getattr(request, "audio", None), "voice", None) or "Kore"
+            payload["generationConfig"]["speechConfig"] = {
+                "voiceConfig": {
+                    "prebuiltVoiceConfig": {
+                        "voiceName": voice_name
+                    }
+                }
+            }
+            payload.setdefault("model", original_model)
 
     return url, headers, payload
 

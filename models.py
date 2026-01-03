@@ -82,9 +82,18 @@ class Thinking(BaseModel):
 class StreamOptions(BaseModel):
     include_usage: Optional[bool] = None
 
+class AudioOutput(BaseModel):
+    voice: Optional[str] = None
+    format: Optional[str] = None
+
+    class Config:
+        extra = "allow"  # 允许未来扩展字段，如 bitrate/sample_rate 等
+
 class RequestModel(BaseRequest):
     model: str
     messages: List[Message]
+    modalities: Optional[List[str]] = None
+    audio: Optional[AudioOutput] = None
     logprobs: Optional[bool] = None
     top_logprobs: Optional[int] = None
     stream: Optional[bool] = None
