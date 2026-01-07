@@ -58,6 +58,80 @@ def _gemini_response_modalities(original_model: str, request_modalities: list[st
         mapped.append("AUDIO")
     return mapped or None
 
+def _build_input_audio_item(item):
+    input_audio = getattr(item, "input_audio", None)
+    if not input_audio or not getattr(input_audio, "data", None):
+        return None
+    audio_item = {
+        "type": "input_audio",
+        "input_audio": {
+            "data": input_audio.data,
+        }
+    }
+    if getattr(input_audio, "format", None):
+        audio_item["input_audio"]["format"] = input_audio.format
+    return audio_item
+
+def _normalize_audio_base64(data: str) -> tuple[str, str | None]:
+    if not data:
+        return "", None
+    cleaned = data.strip()
+    mime_type = None
+    if cleaned.startswith("data:") and ";base64," in cleaned:
+        header, cleaned = cleaned.split(",", 1)
+        mime_type = header[5:header.index(";")]
+    cleaned = re.sub(r"\s+", "", cleaned)
+    pad_len = (-len(cleaned)) % 4
+    if pad_len:
+        cleaned += "=" * pad_len
+    return cleaned, mime_type
+
+def _is_uri(value: str) -> bool:
+    if not value:
+        return False
+    parsed = urlparse(value)
+    return bool(parsed.scheme and parsed.netloc)
+
+def _format_to_mime(format_value: str | None) -> str | None:
+    if not format_value:
+        return None
+    fmt = format_value.strip().lower()
+    if "/" in fmt:
+        return fmt
+    mapping = {
+        "mp4": "video/mp4",
+        "wav": "audio/wav",
+        "mp3": "audio/mpeg",
+        "mpeg": "audio/mpeg",
+        "ogg": "audio/ogg",
+        "flac": "audio/flac",
+        "aac": "audio/aac",
+        "opus": "audio/opus",
+        "webm": "audio/webm",
+    }
+    return mapping.get(fmt, f"audio/{fmt}")
+
+def _build_gemini_input_audio_part(item):
+    input_audio = getattr(item, "input_audio", None)
+    if not input_audio or not getattr(input_audio, "data", None):
+        return None
+    audio_data = input_audio.data
+    mime_type = _format_to_mime(getattr(input_audio, "format", None))
+    if _is_uri(audio_data):
+        return {
+            "file_data": {
+                "file_uri": audio_data,
+                "mime_type": mime_type or "application/octet-stream",
+            }
+        }
+    data, mime_from_data = _normalize_audio_base64(audio_data)
+    return {
+        "inline_data": {
+            "mime_type": mime_type or mime_from_data or "audio/wav",
+            "data": data,
+        }
+    }
+
 async def get_gemini_payload(request, engine, provider, api_key=None):
     headers = {
         'Content-Type': 'application/json'
@@ -95,6 +169,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         tool_calls = None
         if isinstance(msg.content, list):
             content = []
+            file_parts = []
             for item in msg.content:
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
@@ -102,6 +177,15 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
                     content.append(image_message)
+                elif item.type == "input_audio":
+                    audio_part = _build_gemini_input_audio_part(item)
+                    if audio_part:
+                        if "file_data" in audio_part:
+                            file_parts.append(audio_part)
+                        else:
+                            content.append(audio_part)
+            if file_parts:
+                content = file_parts + content
         elif msg.content:
             content = [{"text": msg.content}]
         elif msg.content is None:
@@ -508,6 +592,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         tool_calls = None
         if isinstance(msg.content, list):
             content = []
+            file_parts = []
             for item in msg.content:
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
@@ -515,6 +600,15 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
                     content.append(image_message)
+                elif item.type == "input_audio":
+                    audio_part = _build_gemini_input_audio_part(item)
+                    if audio_part:
+                        if "file_data" in audio_part:
+                            file_parts.append(audio_part)
+                        else:
+                            content.append(audio_part)
+            if file_parts:
+                content = file_parts + content
         elif msg.content:
             content = [{"text": msg.content}]
         elif msg.content is None:
@@ -1198,6 +1292,10 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
                             "image_url": image_message["image_url"]["url"]
                         }
                     content.append(image_message)
+                elif item.type == "input_audio":
+                    audio_item = _build_input_audio_item(item)
+                    if audio_item:
+                        content.append(audio_item)
         else:
             content = msg.content
             if msg.role == "system" and "o3-mini" in original_model and not content.startswith("Formatting re-enabled"):
@@ -1371,6 +1469,10 @@ async def get_azure_payload(request, engine, provider, api_key=None):
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
                     content.append(image_message)
+                elif item.type == "input_audio":
+                    audio_item = _build_input_audio_item(item)
+                    if audio_item:
+                        content.append(audio_item)
         else:
             content = msg.content
             tool_calls = msg.tool_calls
@@ -1453,6 +1555,10 @@ async def get_azure_databricks_payload(request, engine, provider, api_key=None):
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
                     content.append(image_message)
+                elif item.type == "input_audio":
+                    audio_item = _build_input_audio_item(item)
+                    if audio_item:
+                        content.append(audio_item)
         else:
             content = msg.content
             tool_calls = msg.tool_calls
@@ -1577,6 +1683,10 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
                     content.append(image_message)
+                elif item.type == "input_audio":
+                    audio_item = _build_input_audio_item(item)
+                    if audio_item:
+                        content.append(audio_item)
         else:
             content = msg.content
             tool_calls = msg.tool_calls
@@ -1606,6 +1716,8 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
                         messages.append({"role": msg.role, "content": item["text"]})
                     elif item["type"] == "image_url":
                         messages.append({"role": msg.role, "content": [await get_image_message(item["image_url"]["url"], engine)]})
+                    elif item["type"] == "input_audio":
+                        messages.append({"role": msg.role, "content": [item]})
             else:
                 messages.append({"role": msg.role, "content": content})
 

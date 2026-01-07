@@ -37,10 +37,18 @@ class ToolCall(BaseModel):
 class ImageUrl(BaseModel):
     url: str
 
+class InputAudio(BaseModel):
+    data: str
+    format: Optional[str] = None
+
+    class Config:
+        extra = "allow"  # 允许未来扩展字段，如 sample_rate 等
+
 class ContentItem(BaseModel):
     type: str
     text: Optional[str] = None
     image_url: Optional[ImageUrl] = None
+    input_audio: Optional[InputAudio] = None
 
 class Message(BaseModel):
     role: str

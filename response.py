@@ -45,8 +45,14 @@ async def gemini_json_poccess(response_json):
             logger.error(f"finishReason: {finishReason}")
 
     content = reasoning_content = safe_get(json_data, "parts", 0, "text", default="")
-    inline_mime = safe_get(json_data, "parts", 0, "inlineData", "mimeType", default="") or ""
-    inline_b64 = safe_get(json_data, "parts", 0, "inlineData", "data", default="") or ""
+    inline_mime = safe_get(json_data, "parts", 0, "inlineData", "mimeType", default=None)
+    if not inline_mime:
+        inline_mime = safe_get(json_data, "parts", 0, "inline_data", "mime_type", default=None)
+    inline_b64 = safe_get(json_data, "parts", 0, "inlineData", "data", default=None)
+    if not inline_b64:
+        inline_b64 = safe_get(json_data, "parts", 0, "inline_data", "data", default=None)
+    inline_mime = inline_mime or ""
+    inline_b64 = inline_b64 or ""
     if inline_b64 and inline_mime.lower().startswith("image/"):
         image_base64 = inline_b64
     elif inline_b64 and inline_mime.lower().startswith("audio/"):
@@ -637,8 +643,14 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         parts_list = safe_get(parsed_data, 0, "candidates", 0, "content", "parts", default=[])
         for item in parts_list:
             chunk = safe_get(item, "text")
-            inline_mime = safe_get(item, "inlineData", "mimeType", default="") or ""
-            inline_b64 = safe_get(item, "inlineData", "data", default="") or ""
+            inline_mime = safe_get(item, "inlineData", "mimeType", default=None)
+            if not inline_mime:
+                inline_mime = safe_get(item, "inline_data", "mime_type", default=None)
+            inline_b64 = safe_get(item, "inlineData", "data", default=None)
+            if not inline_b64:
+                inline_b64 = safe_get(item, "inline_data", "data", default=None)
+            inline_mime = inline_mime or ""
+            inline_b64 = inline_b64 or ""
             if inline_b64 and inline_mime.lower().startswith("image/"):
                 image_base64 = inline_b64
             elif inline_b64 and inline_mime.lower().startswith("audio/"):
