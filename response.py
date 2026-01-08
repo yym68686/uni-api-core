@@ -774,10 +774,124 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         }
 
         yield response_embedContent
+    elif engine == "doubao-translation":
+        response_bytes = await response.aread()
+        response_json = await asyncio.to_thread(json.loads, response_bytes)
+        if isinstance(response_json, dict) and response_json.get("error"):
+            yield {
+                "error": "doubao-translation upstream error",
+                "status_code": 502,
+                "details": response_json.get("error"),
+            }
+            return
+
+        output_text = None
+        for out in safe_get(response_json, "output", default=[]) or []:
+            if not isinstance(out, dict) or out.get("type") != "message" or out.get("role") != "assistant":
+                continue
+            for c in (out.get("content") or []):
+                if isinstance(c, dict) and c.get("type") == "output_text" and c.get("text"):
+                    output_text = c.get("text")
+                    break
+            if output_text:
+                break
+
+        if not output_text:
+            yield {
+                "error": "doubao-translation empty output",
+                "status_code": 502,
+                "details": response_json,
+            }
+            return
+
+        usage_obj = safe_get(response_json, "usage", default={}) or {}
+        prompt_tokens = usage_obj.get("input_tokens") or usage_obj.get("prompt_tokens") or 0
+        completion_tokens = usage_obj.get("output_tokens") or usage_obj.get("completion_tokens") or 0
+        total_tokens = usage_obj.get("total_tokens") or (prompt_tokens + completion_tokens)
+
+        timestamp = int(datetime.timestamp(datetime.now()))
+        yield await generate_no_stream_response(
+            timestamp,
+            model,
+            content=output_text,
+            role="assistant",
+            total_tokens=total_tokens,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
     else:
         response_bytes = await response.aread()
         response_json = await asyncio.to_thread(json.loads, response_bytes)
         yield response_json
+
+async def fetch_doubao_translation_response_stream(client, url, headers, payload, model, timeout):
+    timestamp = int(datetime.timestamp(datetime.now()))
+    json_payload = await asyncio.to_thread(json.dumps, payload)
+
+    async with client.stream('POST', url, headers=headers, content=json_payload, timeout=timeout) as response:
+        error_message = await check_response(response, "fetch_doubao_translation_response_stream")
+        if error_message:
+            yield error_message
+            return
+
+        buffer = ""
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+
+        async for chunk in response.aiter_text():
+            buffer += chunk.replace("\r", "")
+            while "\n\n" in buffer:
+                raw_event, buffer = buffer.split("\n\n", 1)
+                if not raw_event.strip():
+                    continue
+
+                event_name = ""
+                data_lines = []
+                for line in raw_event.split("\n"):
+                    if line.startswith("event:"):
+                        event_name = line[6:].strip()
+                    elif line.startswith("data:"):
+                        data_lines.append(line[5:].strip())
+
+                data_str = "\n".join(data_lines).strip()
+                if not data_str:
+                    continue
+                if data_str == "[DONE]":
+                    yield "data: [DONE]" + end_of_line
+                    return
+
+                try:
+                    event_data = await asyncio.to_thread(json.loads, data_str)
+                except Exception:
+                    continue
+
+                if event_name == "response.output_text.delta":
+                    delta_text = safe_get(event_data, "delta", default=None)
+                    if not delta_text:
+                        continue
+                    yield await generate_sse_response(timestamp, model, content=delta_text)
+                    continue
+
+                if event_name == "response.completed":
+                    usage_obj = safe_get(event_data, "response", "usage", default={}) or {}
+                    prompt_tokens = usage_obj.get("input_tokens") or 0
+                    completion_tokens = usage_obj.get("output_tokens") or 0
+                    total_tokens = usage_obj.get("total_tokens") or (prompt_tokens + completion_tokens)
+
+                    yield await generate_sse_response(timestamp, model, stop="stop")
+                    if total_tokens:
+                        yield await generate_sse_response(
+                            timestamp,
+                            model,
+                            total_tokens=total_tokens,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                        )
+                    yield "data: [DONE]" + end_of_line
+                    return
+
+        yield "data: [DONE]" + end_of_line
 
 async def fetch_response_stream(client, url, headers, payload, engine, model, timeout=200):
     if engine == "gemini" or engine == "vertex-gemini":
@@ -800,6 +914,9 @@ async def fetch_response_stream(client, url, headers, payload, engine, model, ti
             yield chunk
     elif engine == "cohere":
         async for chunk in fetch_cohere_response_stream(client, url, headers, payload, model, timeout):
+            yield chunk
+    elif engine == "doubao-translation":
+        async for chunk in fetch_doubao_translation_response_stream(client, url, headers, payload, model, timeout):
             yield chunk
     else:
         raise ValueError("Unknown response")

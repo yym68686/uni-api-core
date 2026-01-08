@@ -85,7 +85,10 @@ def get_engine(provider, endpoint=None, original_model=""):
     # print("parsed_url", parsed_url)
     engine = None
     stream = None
-    if parsed_url.path.endswith("/v1beta") or \
+    # Volcengine Ark translation (Responses API)
+    if parsed_url.netloc.endswith("volces.com") and parsed_url.path.rstrip("/").endswith("/api/v3/responses"):
+        engine = "doubao-translation"
+    elif parsed_url.path.endswith("/v1beta") or \
     (parsed_url.netloc == 'generativelanguage.googleapis.com' and "/v1beta/openai" not in parsed_url.path):
         engine = "gemini"
     elif parsed_url.netloc.rstrip('/').endswith('aiplatform.googleapis.com') or \
@@ -118,7 +121,8 @@ def get_engine(provider, endpoint=None, original_model=""):
     and "learnlm" not in original_model \
     and "grok" not in original_model \
     and parsed_url.netloc != 'api.cloudflare.com' \
-    and parsed_url.netloc != 'api.cohere.com':
+    and parsed_url.netloc != 'api.cohere.com' \
+    and engine != "doubao-translation":
         engine = "openrouter"
 
     if "claude" in original_model and engine == "vertex":

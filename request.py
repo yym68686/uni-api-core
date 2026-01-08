@@ -2320,6 +2320,117 @@ async def get_tts_payload(request, engine, provider, api_key=None):
     return url, headers, payload
 
 
+def _doubao_extract_text(content) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                if item:
+                    parts.append(item)
+                continue
+            if hasattr(item, "type") and getattr(item, "type") == "text" and getattr(item, "text", None):
+                parts.append(item.text)
+                continue
+            if hasattr(item, "content"):
+                sub = _doubao_extract_text(getattr(item, "content", None))
+                if sub:
+                    parts.append(sub)
+                continue
+            if isinstance(item, dict):
+                sub = _doubao_extract_text(item.get("text") or item.get("content") or item.get("input"))
+                if sub:
+                    parts.append(sub)
+        return "\n".join(p for p in parts if p)
+    if isinstance(content, dict):
+        return _doubao_extract_text(content.get("text") or content.get("content") or content.get("input"))
+    if hasattr(content, "text") and isinstance(getattr(content, "text", None), str):
+        return content.text
+    if hasattr(content, "content"):
+        return _doubao_extract_text(getattr(content, "content", None))
+    return ""
+
+def _doubao_merge_translation_options(base: dict, override: dict | None) -> dict:
+    if not isinstance(override, dict):
+        return base
+    source = override.get("source_language")
+    target = override.get("target_language")
+    if isinstance(source, str):
+        source = source.strip()
+    if isinstance(target, str):
+        target = target.strip()
+    if source:
+        base["source_language"] = source
+    if target:
+        base["target_language"] = target
+    return base
+
+async def get_doubao_translation_payload(request: RequestModel, engine, provider, api_key=None):
+    model_dict = get_model_dict(provider)
+    original_model = model_dict[request.model]
+
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    url = provider["base_url"]
+
+    post_overrides = safe_get(provider, "preferences", "post_body_parameter_overrides", default={}) or {}
+    model_overrides = post_overrides.get(request.model) if isinstance(post_overrides, dict) else None
+    model_translation_overrides = (
+        model_overrides.get("translation_options")
+        if isinstance(model_overrides, dict)
+        else None
+    )
+
+    default_target_language = safe_get(model_translation_overrides, "target_language", default=None) or "zh"
+    translation_options = {"target_language": default_target_language}
+    _doubao_merge_translation_options(translation_options, model_translation_overrides)
+
+    user_text = None
+    for msg in reversed(request.messages or []):
+        if getattr(msg, "role", None) != "user":
+            continue
+        text = _doubao_extract_text(getattr(msg, "content", None))
+        if text:
+            user_text = text
+            break
+    if not user_text:
+        raise ValueError("No user message")
+
+    content_item = {
+        "type": "input_text",
+        "text": user_text,
+        "translation_options": translation_options,
+    }
+
+    payload = {
+        "model": original_model,
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        **content_item
+                    }
+                ],
+            }
+        ],
+    }
+    if request.stream:
+        payload["stream"] = True
+
+    if isinstance(model_overrides, dict):
+        for k, v in model_overrides.items():
+            if k == "translation_options":
+                continue
+            payload[k] = v
+
+    return url, headers, payload
+
 async def get_payload(request: RequestModel, engine, provider, api_key=None):
     if engine == "gemini":
         return await get_gemini_payload(request, engine, provider, api_key)
@@ -2354,6 +2465,8 @@ async def get_payload(request: RequestModel, engine, provider, api_key=None):
         return await get_moderation_payload(request, engine, provider, api_key)
     elif engine == "embedding":
         return await get_embedding_payload(request, engine, provider, api_key)
+    elif engine == "doubao-translation":
+        return await get_doubao_translation_payload(request, engine, provider, api_key)
     else:
         raise ValueError("Unknown payload")
 
