@@ -46,22 +46,22 @@ async def gemini_json_poccess(response_json):
             logger.error(f"finishReason: {finishReason}")
 
     content = reasoning_content = safe_get(json_data, "parts", 0, "text", default="")
-    inline_mime = safe_get(json_data, "parts", 0, "inlineData", "mimeType", default=None)
-    if not inline_mime:
-        inline_mime = safe_get(json_data, "parts", 0, "inline_data", "mime_type", default=None)
-    inline_b64 = safe_get(json_data, "parts", 0, "inlineData", "data", default=None)
-    if not inline_b64:
-        inline_b64 = safe_get(json_data, "parts", 0, "inline_data", "data", default=None)
-    inline_mime = inline_mime or ""
-    inline_b64 = inline_b64 or ""
-    if inline_b64 and inline_mime.lower().startswith("image/"):
-        image_base64 = inline_b64
-    elif inline_b64 and inline_mime.lower().startswith("audio/"):
-        audio_b64_wav = gemini_audio_inline_data_to_wav_base64(inline_mime, inline_b64)
-
     is_thinking = safe_get(json_data, "parts", 0, "thought", default=False)
     if is_thinking:
         content = safe_get(json_data, "parts", 1, "text", default="")
+    else:
+        inline_mime = safe_get(json_data, "parts", 0, "inlineData", "mimeType", default=None)
+        if not inline_mime:
+            inline_mime = safe_get(json_data, "parts", 0, "inline_data", "mime_type", default=None)
+        inline_b64 = safe_get(json_data, "parts", 0, "inlineData", "data", default=None)
+        if not inline_b64:
+            inline_b64 = safe_get(json_data, "parts", 0, "inline_data", "data", default=None)
+        inline_mime = inline_mime or ""
+        inline_b64 = inline_b64 or ""
+        if inline_b64 and inline_mime.lower().startswith("image/"):
+            image_base64 = inline_b64
+        elif inline_b64 and inline_mime.lower().startswith("audio/"):
+            audio_b64_wav = gemini_audio_inline_data_to_wav_base64(inline_mime, inline_b64)
 
     function_call_name = safe_get(json_data, "parts", 0, "functionCall", "name", default=None)
     function_full_response = safe_get(json_data, "parts", 0, "functionCall", "args", default="")
@@ -116,7 +116,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                 # https://ai.google.dev/api/generate-content?hl=zh-cn#FinishReason
                 is_thinking, reasoning_content, content, image_base64, audio_b64_wav, function_call_name, function_full_response, tools_id, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = await gemini_json_poccess(response_json)
 
-                if is_thinking:
+                if is_thinking and reasoning_content:
                     sse_string = await generate_sse_response(timestamp, model, reasoning_content=reasoning_content)
                     yield sse_string
                 if not image_base64 and content:
