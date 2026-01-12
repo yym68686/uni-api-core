@@ -39,6 +39,18 @@ from .utils import (
 
 gemini_max_token_65k_models = ["gemini-3-pro", "gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking", "gemini-2.5-flash"]
 
+def _decode_gemini_thought_signature_from_tool_call_id(tool_call_id: str | None) -> str | None:
+    if not tool_call_id or not tool_call_id.startswith("call_"):
+        return None
+    encoded = tool_call_id.removeprefix("call_")
+    if not encoded:
+        return None
+    padded = encoded + ("=" * ((4 - (len(encoded) % 4)) % 4))
+    try:
+        return base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+    except Exception:
+        return None
+
 def _gemini_response_modalities(original_model: str, request_modalities: list[str] | None, has_audio: bool) -> list[str] | None:
     # For Gemini preview TTS models, request AUDIO-only to match official API behavior.
     if "preview-tts" in (original_model or "").lower():
@@ -199,6 +211,9 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                     "args": json.loads(tool_call.function.arguments)
                 }
             }
+            thought_signature = _decode_gemini_thought_signature_from_tool_call_id(tool_call.id)
+            if thought_signature:
+                function_arguments["thoughtSignature"] = thought_signature
             messages.append(
                 {
                     "role": "model",
@@ -622,6 +637,9 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                     "args": json.loads(tool_call.function.arguments)
                 }
             }
+            thought_signature = _decode_gemini_thought_signature_from_tool_call_id(tool_call.id)
+            if thought_signature:
+                function_arguments["thoughtSignature"] = thought_signature
             messages.append(
                 {
                     "role": "model",

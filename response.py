@@ -34,6 +34,7 @@ async def gemini_json_poccess(response_json):
     totalTokenCount = 0
     image_base64 = None
     audio_b64_wav = None
+    tools_id = None
 
     json_data = safe_get(response_json, "candidates", 0, "content", default=None)
     finishReason = safe_get(response_json, "candidates", 0 , "finishReason", default=None)
@@ -65,10 +66,17 @@ async def gemini_json_poccess(response_json):
     function_call_name = safe_get(json_data, "parts", 0, "functionCall", "name", default=None)
     function_full_response = safe_get(json_data, "parts", 0, "functionCall", "args", default="")
     function_full_response = await asyncio.to_thread(json.dumps, function_full_response) if function_full_response else None
+    if function_call_name:
+        thought_signature = safe_get(json_data, "parts", 0, "thoughtSignature", default=None)
+        if not thought_signature:
+            thought_signature = safe_get(json_data, "parts", 0, "thought_signature", default=None)
+        if thought_signature:
+            encoded = base64.urlsafe_b64encode(thought_signature.encode("utf-8")).decode("ascii").rstrip("=")
+            tools_id = f"call_{encoded}"
 
     blockReason = safe_get(json_data, 0, "promptFeedback", "blockReason", default=None)
 
-    return is_thinking, reasoning_content, content, image_base64, audio_b64_wav, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount
+    return is_thinking, reasoning_content, content, image_base64, audio_b64_wav, function_call_name, function_full_response, tools_id, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount
 
 async def fetch_gemini_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
@@ -106,7 +114,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                         continue
 
                 # https://ai.google.dev/api/generate-content?hl=zh-cn#FinishReason
-                is_thinking, reasoning_content, content, image_base64, audio_b64_wav, function_call_name, function_full_response, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = await gemini_json_poccess(response_json)
+                is_thinking, reasoning_content, content, image_base64, audio_b64_wav, function_call_name, function_full_response, tools_id, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = await gemini_json_poccess(response_json)
 
                 if is_thinking:
                     sse_string = await generate_sse_response(timestamp, model, reasoning_content=reasoning_content)
@@ -144,10 +152,10 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                     )
 
                 if function_call_name:
-                    sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=function_call_name)
+                    sse_string = await generate_sse_response(timestamp, model, content=None, tools_id=tools_id, function_call_name=function_call_name)
                     yield sse_string
                 if function_full_response:
-                    sse_string = await generate_sse_response(timestamp, model, content=None, tools_id="chatcmpl-9inWv0yEtgn873CxMBzHeCeiHctTV", function_call_name=None, function_call_content=function_full_response)
+                    sse_string = await generate_sse_response(timestamp, model, content=None, tools_id=tools_id, function_call_name=None, function_call_content=function_full_response)
                     yield sse_string
 
                 if parts_json == "[]" or blockReason == "PROHIBITED_CONTENT":
