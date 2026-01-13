@@ -4,19 +4,79 @@ import ast
 import json
 import httpx
 import base64
+import hashlib
 import random
 import string
 import asyncio
+import threading
 import traceback
 import wave
 from time import time
 from PIL import Image
 from fastapi import HTTPException
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from httpx_socks import AsyncProxyTransport
 from urllib.parse import urlparse, urlunparse
 
 from .log_config import logger
+
+class _BoundedFIFOCache:
+    def __init__(self, max_items: int):
+        self._max_items = max_items
+        self._data: OrderedDict[str, str] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> str | None:
+        if not key:
+            return None
+        with self._lock:
+            return self._data.get(key)
+
+    def set(self, key: str, value: str) -> None:
+        if not key or not value:
+            return
+        with self._lock:
+            if key in self._data:
+                self._data.pop(key, None)
+            self._data[key] = value
+            while len(self._data) > self._max_items:
+                self._data.popitem(last=False)
+
+_GEMINI_IMAGE_THOUGHT_SIGNATURE_CACHE = _BoundedFIFOCache(max_items=100)
+
+def _normalize_base64_payload(payload: str) -> str:
+    if not payload:
+        return ""
+    cleaned = re.sub(r"\\s+", "", payload)
+    while len(cleaned) % 4 == 1:
+        cleaned = cleaned[:-1]
+    pad_len = (-len(cleaned)) % 4
+    if pad_len:
+        cleaned += "=" * pad_len
+    return cleaned
+
+def _gemini_image_cache_key_from_base64(data_base64: str) -> str | None:
+    if not data_base64:
+        return None
+    try:
+        image_bytes = base64.b64decode(_normalize_base64_payload(data_base64))
+    except Exception:
+        return None
+    if not image_bytes:
+        return None
+    return hashlib.sha256(image_bytes).hexdigest()
+
+def cache_put_gemini_image_thought_signature(inline_data_base64: str, thought_signature: str) -> None:
+    key = _gemini_image_cache_key_from_base64(inline_data_base64)
+    if not key:
+        return
+    _GEMINI_IMAGE_THOUGHT_SIGNATURE_CACHE.set(key, thought_signature)
+
+def cache_get_gemini_image_thought_signature(inline_data_base64: str) -> str | None:
+    key = _gemini_image_cache_key_from_base64(inline_data_base64)
+    if not key:
+        return None
+    return _GEMINI_IMAGE_THOUGHT_SIGNATURE_CACHE.get(key)
 
 def get_model_dict(provider):
     model_dict = {}
@@ -850,12 +910,17 @@ async def get_image_message(base64_image, engine = None):
             }
         }
     if "gemini" == engine or "vertex-gemini" == engine:
-        return {
+        image_data_base64 = base64_image.split(",")[1]
+        thought_sig = cache_get_gemini_image_thought_signature(image_data_base64)
+        part = {
             "inlineData": {
                 "mimeType": image_type,
-                "data": base64_image.split(",")[1],
+                "data": image_data_base64,
             }
         }
+        if thought_sig:
+            part["thoughtSignature"] = thought_sig
+        return part
     raise ValueError("Unknown engine")
 
 async def get_text_message(message, engine = None):

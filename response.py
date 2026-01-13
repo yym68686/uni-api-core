@@ -15,6 +15,7 @@ from .utils import (
     end_of_line,
     parse_json_safely,
     gemini_audio_inline_data_to_wav_base64,
+    cache_put_gemini_image_thought_signature,
 )
 
 async def check_response(response, error_log):
@@ -47,6 +48,24 @@ async def gemini_json_poccess(response_json):
 
     content = reasoning_content = safe_get(json_data, "parts", 0, "text", default="")
     is_thinking = safe_get(json_data, "parts", 0, "thought", default=False)
+
+    parts_list = safe_get(json_data, "parts", default=[])
+    if isinstance(parts_list, list):
+        for part in parts_list:
+            inline_mime_any = safe_get(part, "inlineData", "mimeType", default=None)
+            if not inline_mime_any:
+                inline_mime_any = safe_get(part, "inline_data", "mime_type", default=None)
+            inline_b64_any = safe_get(part, "inlineData", "data", default=None)
+            if not inline_b64_any:
+                inline_b64_any = safe_get(part, "inline_data", "data", default=None)
+            inline_mime_any = (inline_mime_any or "").lower()
+            if inline_b64_any and inline_mime_any.startswith("image/"):
+                thought_sig_any = safe_get(part, "thoughtSignature", default=None)
+                if not thought_sig_any:
+                    thought_sig_any = safe_get(part, "thought_signature", default=None)
+                if thought_sig_any:
+                    cache_put_gemini_image_thought_signature(inline_b64_any, thought_sig_any)
+
     if is_thinking:
         content = safe_get(json_data, "parts", 1, "text", default="")
     else:
@@ -661,6 +680,11 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
             inline_b64 = inline_b64 or ""
             if inline_b64 and inline_mime.lower().startswith("image/"):
                 image_base64 = inline_b64
+                thought_sig_any = safe_get(item, "thoughtSignature", default=None)
+                if not thought_sig_any:
+                    thought_sig_any = safe_get(item, "thought_signature", default=None)
+                if thought_sig_any:
+                    cache_put_gemini_image_thought_signature(inline_b64, thought_sig_any)
             elif inline_b64 and inline_mime.lower().startswith("audio/"):
                 audio_b64_wav = gemini_audio_inline_data_to_wav_base64(inline_mime, inline_b64) or audio_b64_wav
             is_think = safe_get(item, "thought", default=False)
