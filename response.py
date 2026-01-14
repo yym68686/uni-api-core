@@ -300,6 +300,10 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
                         sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=line.get("delta"))
                         yield sse_string
                         continue
+                    elif line.get("type") == "response.reasoning_summary_text.done":
+                        sse_string = await generate_sse_response(timestamp, payload["model"], content="\n\n")
+                        yield sse_string
+                        continue
                     elif line.get("type") == "response.output_text.delta" and line.get("delta"):
                         sse_string = await generate_sse_response(timestamp, payload["model"], content=line.get("delta"))
                         yield sse_string
