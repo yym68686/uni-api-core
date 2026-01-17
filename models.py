@@ -1,5 +1,5 @@
 from io import IOBase
-from pydantic import BaseModel, Field, model_validator, ConfigDict
+from pydantic import BaseModel, Field, model_validator, ConfigDict, field_validator
 from typing import List, Dict, Optional, Union, Tuple, Literal, Any
 
 class FunctionParameter(BaseModel):
@@ -122,6 +122,20 @@ class RequestModel(BaseRequest):
     thinking: Optional[Thinking] = None
     stream_options: Optional[StreamOptions] = None
     chat_template_kwargs: Optional[Dict[str, Any]] = None
+
+    @field_validator("messages")
+    @classmethod
+    def validate_tool_messages(cls, messages: List[Message]):
+        for idx, msg in enumerate(messages or []):
+            if getattr(msg, "role", None) != "tool":
+                continue
+            tool_call_id = getattr(msg, "tool_call_id", None)
+            if not tool_call_id or not str(tool_call_id).strip():
+                raise ValueError(f"messages[{idx}]: role 'tool' requires 'tool_call_id'")
+            content = getattr(msg, "content", None)
+            if content is None or (isinstance(content, list) and len(content) == 0):
+                raise ValueError(f"messages[{idx}]: role 'tool' requires non-empty 'content'")
+        return messages
 
     def get_last_text_message(self) -> Optional[str]:
         for message in reversed(self.messages):
