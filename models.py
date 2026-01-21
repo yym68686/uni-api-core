@@ -1,6 +1,8 @@
 from io import IOBase
 from pydantic import BaseModel, Field, model_validator, ConfigDict, field_validator
 from typing import List, Dict, Optional, Union, Tuple, Literal, Any
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, message=".*shadows an attribute.*")
 
 class FunctionParameter(BaseModel):
     type: str
@@ -70,9 +72,6 @@ class ToolChoice(BaseModel):
 class BaseRequest(BaseModel):
     request_type: Optional[Literal["chat", "image", "audio", "moderation"]] = Field(default=None, exclude=True)
 
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning, message=".*shadows an attribute.*")
-
 class JsonSchema(BaseModel):
     name: str
     schema: Dict[str, Any] = Field(validation_alias='schema')
@@ -126,12 +125,29 @@ class RequestModel(BaseRequest):
     @field_validator("messages")
     @classmethod
     def validate_tool_messages(cls, messages: List[Message]):
+        seen_tool_call_ids: set[str] = set()
+        consumed_tool_call_ids: set[str] = set()
         for idx, msg in enumerate(messages or []):
-            if getattr(msg, "role", None) != "tool":
+            role = getattr(msg, "role", None)
+            if role in ("assistant", "model"):
+                for tool_call in (getattr(msg, "tool_calls", None) or []):
+                    tool_call_id = getattr(tool_call, "id", None)
+                    if tool_call_id and str(tool_call_id).strip():
+                        seen_tool_call_ids.add(str(tool_call_id).strip())
+
+            if role != "tool":
                 continue
             tool_call_id = getattr(msg, "tool_call_id", None)
             if not tool_call_id or not str(tool_call_id).strip():
                 raise ValueError(f"messages[{idx}]: role 'tool' requires 'tool_call_id'")
+            tool_call_id = str(tool_call_id).strip()
+            if tool_call_id not in seen_tool_call_ids:
+                raise ValueError(
+                    f"messages[{idx}]: tool_call_id '{tool_call_id}' has no matching prior 'assistant.tool_calls[].id'"
+                )
+            if tool_call_id in consumed_tool_call_ids:
+                raise ValueError(f"messages[{idx}]: duplicate tool_call_id '{tool_call_id}'")
+            consumed_tool_call_ids.add(tool_call_id)
             content = getattr(msg, "content", None)
             if content is None or (isinstance(content, list) and len(content) == 0):
                 raise ValueError(f"messages[{idx}]: role 'tool' requires non-empty 'content'")
