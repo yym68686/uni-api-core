@@ -14,6 +14,8 @@ from typing import Tuple
 from datetime import timezone
 from urllib.parse import urlparse
 
+from fastapi import HTTPException
+
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -169,7 +171,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     messages = []
     systemInstruction = None
     system_prompt = ""
-    function_arguments = None
+    tool_call_id_to_function_name: dict[str, str] = {}
 
     try:
         request_messages = [Message(role="user", content=request.prompt)]
@@ -178,7 +180,10 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     for msg in request_messages:
         if msg.role == "assistant":
             msg.role = "model"
-        tool_calls = None
+
+        role = getattr(msg, "role", None)
+        tool_calls = getattr(msg, "tool_calls", None) or []
+        content = None
         if isinstance(msg.content, list):
             content = []
             file_parts = []
@@ -200,28 +205,48 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 content = file_parts + content
         elif msg.content:
             content = [{"text": msg.content}]
-        elif msg.content is None:
-            tool_calls = msg.tool_calls
+
+        if role == "system":
+            if content and safe_get(content, 0, "text", default=None) is not None:
+                content[0]["text"] = re.sub(r"_+", "_", content[0]["text"])
+                system_prompt = system_prompt + "\n\n" + content[0]["text"]
+            continue
 
         if tool_calls:
-            tool_call = tool_calls[0]
-            function_arguments = {
-                "functionCall": {
-                    "name": tool_call.function.name,
-                    "args": json.loads(tool_call.function.arguments)
+            if role != "model":
+                raise HTTPException(status_code=400, detail=f"tool_calls only supported for role 'assistant', got '{role}'")
+            parts = []
+            if content:
+                parts.extend(content)
+            for tool_call in tool_calls:
+                tool_call_id_to_function_name[tool_call.id] = tool_call.function.name
+                try:
+                    args = json.loads(tool_call.function.arguments)
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid tool_call arguments for '{tool_call.function.name}': {e}",
+                    ) from e
+                function_arguments = {
+                    "functionCall": {
+                        "name": tool_call.function.name,
+                        "args": args,
+                    }
                 }
-            }
-            thought_signature = _decode_gemini_thought_signature_from_tool_call_id(tool_call.id)
-            if thought_signature:
-                function_arguments["thoughtSignature"] = thought_signature
-            messages.append(
-                {
-                    "role": "model",
-                    "parts": [function_arguments]
-                }
-            )
-        elif msg.role == "tool":
-            function_call_name = function_arguments["functionCall"]["name"]
+                thought_signature = _decode_gemini_thought_signature_from_tool_call_id(tool_call.id)
+                if thought_signature:
+                    function_arguments["thoughtSignature"] = thought_signature
+                parts.append(function_arguments)
+            messages.append({"role": "model", "parts": parts})
+        elif role == "tool":
+            tool_call_id = getattr(msg, "tool_call_id", None)
+            tool_call_id = str(tool_call_id).strip() if tool_call_id else ""
+            function_call_name = tool_call_id_to_function_name.get(tool_call_id)
+            if not function_call_name:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid tool message: tool_call_id '{tool_call_id}' has no matching prior assistant tool_calls",
+                )
             messages.append(
                 {
                     "role": "function",
@@ -238,11 +263,8 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                     }]
                 }
             )
-        elif msg.role != "system" and content:
-            messages.append({"role": msg.role, "parts": content})
-        elif msg.role == "system":
-            content[0]["text"] = re.sub(r"_+", "_", content[0]["text"])
-            system_prompt = system_prompt + "\n\n" + content[0]["text"]
+        elif content:
+            messages.append({"role": role, "parts": content})
     if system_prompt.strip():
         systemInstruction = {"parts": [{"text": system_prompt}]}
 
@@ -599,12 +621,14 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
     messages = []
     systemInstruction = None
     system_prompt = ""
-    function_arguments = None
+    tool_call_id_to_function_name: dict[str, str] = {}
     request_messages = copy.deepcopy(request.messages)
     for msg in request_messages:
         if msg.role == "assistant":
             msg.role = "model"
-        tool_calls = None
+        role = getattr(msg, "role", None)
+        tool_calls = getattr(msg, "tool_calls", None) or []
+        content = None
         if isinstance(msg.content, list):
             content = []
             file_parts = []
@@ -626,28 +650,47 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                 content = file_parts + content
         elif msg.content:
             content = [{"text": msg.content}]
-        elif msg.content is None:
-            tool_calls = msg.tool_calls
+
+        if role == "system":
+            if content and safe_get(content, 0, "text", default=None) is not None:
+                system_prompt = system_prompt + "\n\n" + content[0]["text"]
+            continue
 
         if tool_calls:
-            tool_call = tool_calls[0]
-            function_arguments = {
-                "functionCall": {
-                    "name": tool_call.function.name,
-                    "args": json.loads(tool_call.function.arguments)
+            if role != "model":
+                raise HTTPException(status_code=400, detail=f"tool_calls only supported for role 'assistant', got '{role}'")
+            parts = []
+            if content:
+                parts.extend(content)
+            for tool_call in tool_calls:
+                tool_call_id_to_function_name[tool_call.id] = tool_call.function.name
+                try:
+                    args = json.loads(tool_call.function.arguments)
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid tool_call arguments for '{tool_call.function.name}': {e}",
+                    ) from e
+                function_arguments = {
+                    "functionCall": {
+                        "name": tool_call.function.name,
+                        "args": args,
+                    }
                 }
-            }
-            thought_signature = _decode_gemini_thought_signature_from_tool_call_id(tool_call.id)
-            if thought_signature:
-                function_arguments["thoughtSignature"] = thought_signature
-            messages.append(
-                {
-                    "role": "model",
-                    "parts": [function_arguments]
-                }
-            )
-        elif msg.role == "tool":
-            function_call_name = function_arguments["functionCall"]["name"]
+                thought_signature = _decode_gemini_thought_signature_from_tool_call_id(tool_call.id)
+                if thought_signature:
+                    function_arguments["thoughtSignature"] = thought_signature
+                parts.append(function_arguments)
+            messages.append({"role": "model", "parts": parts})
+        elif role == "tool":
+            tool_call_id = getattr(msg, "tool_call_id", None)
+            tool_call_id = str(tool_call_id).strip() if tool_call_id else ""
+            function_call_name = tool_call_id_to_function_name.get(tool_call_id)
+            if not function_call_name:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid tool message: tool_call_id '{tool_call_id}' has no matching prior assistant tool_calls",
+                )
             messages.append(
                 {
                     "role": "function",
@@ -664,10 +707,8 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                     }]
                 }
             )
-        elif msg.role != "system" and content:
-            messages.append({"role": msg.role, "parts": content})
-        elif msg.role == "system":
-            system_prompt = system_prompt + "\n\n" + content[0]["text"]
+        elif content:
+            messages.append({"role": role, "parts": content})
     if system_prompt.strip():
         systemInstruction = {"parts": [{"text": system_prompt}]}
 
