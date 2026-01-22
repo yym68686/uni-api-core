@@ -141,6 +141,10 @@ class BaseAPI:
             self.embeddings = urlunparse(parsed_url[:2] + (before_v1 + "/v1beta/embeddings",) + ("",) * 3)
 
 def get_engine(provider, endpoint=None, original_model=""):
+    # Config-driven Jina search: route via /search endpoints and use a dedicated engine.
+    if endpoint in ("/search", "/v1/search"):
+        return "search", False
+
     parsed_url = urlparse(provider['base_url'])
     # print("parsed_url", parsed_url)
     engine = None

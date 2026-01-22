@@ -2490,6 +2490,35 @@ async def get_doubao_translation_payload(request: RequestModel, engine, provider
 
     return url, headers, payload
 
+def _get_search_query(request: RequestModel) -> str:
+    q = (request.get_last_text_message() or "").strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="Missing search query")
+    return q
+
+async def get_search_payload(request: RequestModel, provider: dict, api_key: str | None = None):
+    """
+    Search payload builder.
+    Keep this as a small router so we can add other search providers later.
+    """
+    q = _get_search_query(request)
+
+    provider_name = str(provider.get("provider") or "").lower()
+    provider_base_url = str(provider.get("base_url") or "").lower()
+
+    # Default implementation: Jina search endpoint.
+    if provider_name == "jina" or "api.jina.ai" in provider_base_url:
+        url = "https://s.jina.ai/"
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "X-Respond-With": "no-content",
+        }
+        payload = {"q": q}
+        return url, headers, payload
+
+    raise HTTPException(status_code=400, detail=f"Unsupported search provider: {provider.get('provider')}")
+
 async def get_payload(request: RequestModel, engine, provider, api_key=None):
     if engine == "gemini":
         return await get_gemini_payload(request, engine, provider, api_key)
@@ -2526,6 +2555,8 @@ async def get_payload(request: RequestModel, engine, provider, api_key=None):
         return await get_embedding_payload(request, engine, provider, api_key)
     elif engine == "doubao-translation":
         return await get_doubao_translation_payload(request, engine, provider, api_key)
+    elif engine == "search":
+        return await get_search_payload(request, provider, api_key)
     else:
         raise ValueError("Unknown payload")
 

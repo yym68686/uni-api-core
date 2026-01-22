@@ -637,6 +637,20 @@ async def fetch_aws_response_stream(client, url, headers, payload, model, timeou
 
 async def fetch_response(client, url, headers, payload, engine, model, timeout=200):
     response = None
+    if engine == "search":
+        response = await client.get(url, headers=headers, params=payload, timeout=timeout)
+        error_message = await check_response(response, "fetch_response")
+        if error_message:
+            yield error_message
+            return
+        try:
+            response_json = response.json()
+        except Exception:
+            response_json = {"text": response.text}
+        json_data = await asyncio.to_thread(json.dumps, response_json, ensure_ascii=False)
+        yield json_data
+        return
+
     if payload.get("file"):
         file = payload.pop("file")
         response = await client.post(url, headers=headers, data=payload, files={"file": file}, timeout=timeout)
