@@ -5,6 +5,7 @@ import string
 import base64
 import asyncio
 from datetime import datetime
+from urllib.parse import urlparse
 
 from .log_config import logger
 
@@ -17,6 +18,97 @@ from .utils import (
     gemini_audio_inline_data_to_wav_base64,
     cache_put_gemini_image_thought_signature,
 )
+
+def _normalize_search_item_defaults(item: dict) -> dict:
+    normalized = dict(item or {})
+    normalized.setdefault("title", "")
+    normalized.setdefault("url", "")
+    normalized.setdefault("description", "")
+    normalized.setdefault("content", "")
+    normalized.setdefault("usage", None)
+    normalized.setdefault("score", None)
+    normalized.setdefault("raw_content", None)
+    return normalized
+
+def normalize_search_response(url: str, response_json: object) -> dict:
+    """
+    Normalizes different search providers into a Jina-like shape:
+      { code, status, data: [{title,url,description,content,...}], meta: {...} }
+    """
+    parsed = urlparse(url or "")
+    host = (parsed.netloc or "").lower()
+
+    # Tavily shape:
+    # {query, results:[{url,title,content,score,raw_content}], response_time, request_id, ...}
+    if isinstance(response_json, dict) and (host.endswith("tavily.com") or "results" in response_json):
+        results = response_json.get("results") or []
+        data = []
+        for r in results:
+            if not isinstance(r, dict):
+                continue
+            title = r.get("title") or ""
+            link = r.get("url") or ""
+            content = r.get("content") or ""
+            description = content
+            if isinstance(description, str) and len(description) > 240:
+                description = description[:237] + "..."
+            item = {
+                "title": title,
+                "url": link,
+                "description": description or "",
+                "content": content or "",
+            }
+            # keep Tavily extra fields at the same level for convenience
+            for k, v in r.items():
+                if k not in item:
+                    item[k] = v
+            data.append(_normalize_search_item_defaults(item))
+
+        meta = {
+            "provider": "tavily",
+            "query": response_json.get("query"),
+            "answer": response_json.get("answer"),
+            "follow_up_questions": response_json.get("follow_up_questions"),
+            "images": response_json.get("images"),
+            "response_time": response_json.get("response_time"),
+            "request_id": response_json.get("request_id"),
+        }
+        # preserve any additional top-level fields
+        for k, v in response_json.items():
+            if k not in meta and k != "results":
+                meta[k] = v
+
+        return {
+            "code": 200,
+            "status": 20000,
+            "data": data,
+            "meta": meta,
+        }
+
+    # Jina (already close to desired format).
+    if isinstance(response_json, dict) and "data" in response_json:
+        out = dict(response_json)
+        out.setdefault("code", 200)
+        out.setdefault("status", 20000)
+        meta = out.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+        meta.setdefault("provider", "jina")
+        out["meta"] = meta
+        normalized_data = []
+        for item in (out.get("data") or []):
+            if isinstance(item, dict):
+                normalized_data.append(_normalize_search_item_defaults(item))
+        out["data"] = normalized_data
+        return out
+
+    # Fallback: wrap unknown shapes without losing data.
+    return {
+        "code": 200,
+        "status": 20000,
+        "data": [],
+        "meta": {"provider": "unknown", "raw": response_json},
+    }
 
 async def check_response(response, error_log):
     if response and not (200 <= response.status_code < 300):
@@ -638,7 +730,17 @@ async def fetch_aws_response_stream(client, url, headers, payload, model, timeou
 async def fetch_response(client, url, headers, payload, engine, model, timeout=200):
     response = None
     if engine == "search":
-        response = await client.get(url, headers=headers, params=payload, timeout=timeout)
+        content_type = None
+        for k in ("Content-Type", "content-type"):
+            if k in (headers or {}):
+                content_type = headers.get(k)
+                break
+
+        if content_type and "application/json" in str(content_type).lower():
+            response = await client.post(url, headers=headers, json=payload, timeout=timeout)
+        else:
+            response = await client.get(url, headers=headers, params=payload, timeout=timeout)
+
         error_message = await check_response(response, "fetch_response")
         if error_message:
             yield error_message
@@ -647,7 +749,8 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
             response_json = response.json()
         except Exception:
             response_json = {"text": response.text}
-        json_data = await asyncio.to_thread(json.dumps, response_json, ensure_ascii=False)
+        normalized = normalize_search_response(url, response_json)
+        json_data = await asyncio.to_thread(json.dumps, normalized, ensure_ascii=False)
         yield json_data
         return
 

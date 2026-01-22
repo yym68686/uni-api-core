@@ -2506,7 +2506,24 @@ async def get_search_payload(request: RequestModel, provider: dict, api_key: str
     provider_name = str(provider.get("provider") or "").lower()
     provider_base_url = str(provider.get("base_url") or "").lower()
 
-    # Default implementation: Jina search endpoint.
+    # Tavily: https://api.tavily.com/search (POST JSON)
+    if provider_name == "tavily" or "api.tavily.com" in provider_base_url:
+        url = provider.get("base_url") or "https://api.tavily.com/search"
+        defaults = safe_get(provider, "preferences", "search_defaults", default={}) or {}
+        payload = {
+            "query": q,
+            "topic": defaults.get("topic", "general"),
+            "search_depth": defaults.get("search_depth", "basic"),
+            "chunks_per_source": defaults.get("chunks_per_source", 3),
+            "max_results": defaults.get("max_results", 7),
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        return url, headers, payload
+
+    # Default implementation: Jina search endpoint (GET with query params).
     if provider_name == "jina" or "api.jina.ai" in provider_base_url:
         url = "https://s.jina.ai/"
         headers = {
