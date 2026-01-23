@@ -223,8 +223,38 @@ class TextToSpeechRequest(BaseRequest):
     speed: Optional[float] = 1.0
     stream: Optional[bool] = False  # Add this line
 
+class ResponsesRequest(BaseRequest):
+    model: str
+    input: Any
+    stream: Optional[bool] = None
+
+    model_config = ConfigDict(extra="allow")
+
+    def get_last_text_message(self) -> Optional[str]:
+        user_input = getattr(self, "input", None)
+        if isinstance(user_input, str):
+            return user_input
+        if not isinstance(user_input, list):
+            return None
+
+        for item in reversed(user_input):
+            if not isinstance(item, dict):
+                continue
+            if (item.get("role") or "").lower() != "user":
+                continue
+            content = item.get("content")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                for part in reversed(content):
+                    if not isinstance(part, dict):
+                        continue
+                    if part.get("type") in ("input_text", "text") and part.get("text"):
+                        return part.get("text")
+        return None
+
 class UnifiedRequest(BaseModel):
-    data: Union[RequestModel, ImageGenerationRequest, AudioTranscriptionRequest, ModerationRequest, EmbeddingRequest, TextToSpeechRequest]
+    data: Union[RequestModel, ResponsesRequest, ImageGenerationRequest, AudioTranscriptionRequest, ModerationRequest, EmbeddingRequest, TextToSpeechRequest]
 
     @model_validator(mode='before')
     @classmethod
@@ -246,8 +276,13 @@ class UnifiedRequest(BaseModel):
                 values["data"] = EmbeddingRequest(**values)
                 values["data"].request_type = "embedding"
             elif "input" in values:
-                values["data"] = ModerationRequest(**values)
-                values["data"].request_type = "moderation"
+                model_name = str(values.get("model") or "")
+                if "moderation" in model_name or not model_name:
+                    values["data"] = ModerationRequest(**values)
+                    values["data"].request_type = "moderation"
+                else:
+                    values["data"] = ResponsesRequest(**values)
+                    values["data"].request_type = "chat"
             else:
                 raise ValueError("无法确定请求类型")
         return values

@@ -1,6 +1,7 @@
 import re
 import json
 import copy
+import uuid
 import hmac
 import time
 import httpx
@@ -1327,6 +1328,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         headers['Authorization'] = f"Bearer {api_key}"
 
     url = provider['base_url']
+    use_responses_api = engine == "codex" or "v1/responses" in url
     if "openrouter.ai" in url:
         headers['HTTP-Referer'] = "https://github.com/yym68686/uni-api"
         headers['X-Title'] = "Uni API"
@@ -1340,12 +1342,12 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
             for item in msg.content:
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
-                    if "v1/responses" in url:
+                    if use_responses_api:
                         text_message["type"] = "input_text"
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
-                    if "v1/responses" in url:
+                    if use_responses_api:
                         image_message = {
                             "type": "input_image",
                             "image_url": image_message["image_url"]["url"]
@@ -1381,7 +1383,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         else:
             messages.append({"role": msg.role, "content": content})
 
-    if "v1/responses" in url:
+    if use_responses_api:
         payload = {
             "model": original_model,
             "input": messages,
@@ -1399,7 +1401,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
 
     for field, value in request.model_dump(exclude_unset=True).items():
         if field not in miss_fields and value is not None:
-            if field == "max_tokens" and "v1/responses" in url:
+            if field == "max_tokens" and use_responses_api:
                 payload["max_output_tokens"] = value
             elif field == "max_tokens" and "gpt-5" in original_model:
                 payload["max_completion_tokens"] = value
@@ -1426,12 +1428,12 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
 
     if "gpt-oss" in original_model or "gpt-5" in original_model:
         if request.model.endswith("high"):
-            if "v1/responses" in url:
+            if use_responses_api:
                 payload["reasoning"] = {"effort": "high"}
             else:
                 payload["reasoning_effort"] = "high"
         elif request.model.endswith("low"):
-            if "v1/responses" in url:
+            if use_responses_api:
                 payload["reasoning"] = {"effort": "low"}
             else:
                 payload["reasoning_effort"] = "low"
@@ -1444,7 +1446,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
         if "temperature" in payload:
             payload.pop("temperature")
 
-        if "v1/responses" in url:
+        if use_responses_api:
             payload.pop("stream_options", None)
 
     # 代码生成/数学解题  0.0
@@ -1482,6 +1484,195 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
                     payload[k] = v
             elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
                 payload[key] = value
+
+    return url, headers, payload
+
+def _codex_responses_url(base_url: str) -> str:
+    base = (base_url or "").strip()
+    if not base:
+        return "https://chatgpt.com/backend-api/codex/responses"
+
+    base = base.rstrip("/")
+    if base.endswith("/v1/responses") or base.endswith("/responses"):
+        return base
+    return f"{base}/responses"
+
+def _codex_chat_messages_to_responses_input(request: RequestModel, provider: dict) -> list[dict]:
+    input_items: list[dict] = []
+
+    for msg in request.messages or []:
+        role = (getattr(msg, "role", None) or "").strip()
+        if not role:
+            continue
+
+        # Tool results are top-level items in Codex/Responses format.
+        if role == "tool":
+            tool_call_id = (getattr(msg, "tool_call_id", None) or "").strip()
+            if not tool_call_id:
+                continue
+
+            output_value = getattr(msg, "content", None)
+            if isinstance(output_value, list):
+                text_parts: list[str] = []
+                for part in output_value:
+                    if getattr(part, "type", None) == "text" and getattr(part, "text", None):
+                        text_parts.append(str(part.text))
+                output_value = "\n".join(text_parts) if text_parts else json.dumps(
+                    [p.model_dump(exclude_unset=True) for p in output_value],
+                    ensure_ascii=False,
+                )
+            if output_value is None:
+                output_value = ""
+
+            input_items.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": tool_call_id,
+                    "output": output_value,
+                }
+            )
+            continue
+
+        codex_role = "developer" if role == "system" else role
+        part_type = "output_text" if role == "assistant" else "input_text"
+
+        content_parts: list[dict] = []
+        content_value = getattr(msg, "content", None)
+        if isinstance(content_value, str):
+            if content_value:
+                content_parts.append({"type": part_type, "text": content_value})
+        elif isinstance(content_value, list):
+            for item in content_value:
+                item_type = getattr(item, "type", None)
+                if item_type == "text" and getattr(item, "text", None):
+                    content_parts.append({"type": part_type, "text": str(item.text)})
+                elif item_type == "image_url" and provider.get("image", True) and role == "user":
+                    image_url_obj = getattr(item, "image_url", None)
+                    image_url = getattr(image_url_obj, "url", None) if image_url_obj else None
+                    if image_url:
+                        content_parts.append({"type": "input_image", "image_url": image_url})
+                elif item_type == "input_audio" and role == "user":
+                    audio_item = _build_input_audio_item(item)
+                    if audio_item:
+                        content_parts.append(audio_item)
+
+        input_items.append(
+            {
+                "type": "message",
+                "role": codex_role,
+                "content": content_parts,
+            }
+        )
+
+        # Tool calls are separate top-level objects in Codex payloads.
+        if role == "assistant":
+            for tool_call in getattr(msg, "tool_calls", None) or []:
+                if getattr(tool_call, "type", None) != "function":
+                    continue
+                func = getattr(tool_call, "function", None)
+                if not func:
+                    continue
+                input_items.append(
+                    {
+                        "type": "function_call",
+                        "call_id": getattr(tool_call, "id", None),
+                        "name": getattr(func, "name", None),
+                        "arguments": getattr(func, "arguments", None),
+                    }
+                )
+
+    return input_items
+
+async def get_codex_payload(request, engine, provider, api_key=None):
+    headers = {
+        "Content-Type": "application/json",
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    model_dict = get_model_dict(provider)
+    original_model = model_dict[request.model]
+
+    url = _codex_responses_url(provider.get("base_url", ""))
+
+    payload: dict = {
+        "model": original_model,
+        "instructions": "",
+        "input": _codex_chat_messages_to_responses_input(request, provider),
+        # CLIProxyAPI defaults that Codex commonly expects.
+        "parallel_tool_calls": True,
+        "reasoning": {"effort": "medium", "summary": "auto"},
+        "include": ["reasoning.encrypted_content"],
+        "store": False,
+    }
+
+    if request.stream is not None:
+        payload["stream"] = bool(request.stream)
+
+    if request.tools and provider.get("tools") is not False:
+        tools_out: list[dict] = []
+        for tool in request.tools:
+            tool_type = getattr(tool, "type", None)
+            if tool_type != "function":
+                # Pass through non-function tools when present.
+                tools_out.append(tool.model_dump(exclude_unset=True))
+                continue
+            fn = getattr(tool, "function", None)
+            if not fn:
+                continue
+            item: dict = {
+                "type": "function",
+                "name": getattr(fn, "name", None),
+            }
+            if getattr(fn, "description", None):
+                item["description"] = fn.description
+            params = getattr(fn, "parameters", None)
+            if params is not None:
+                try:
+                    item["parameters"] = params.model_dump(by_alias=True, exclude_none=True)
+                except Exception:
+                    item["parameters"] = params
+            tools_out.append(item)
+        if tools_out:
+            payload["tools"] = tools_out
+
+    if request.tool_choice is not None and provider.get("tools") is not False:
+        tc = request.tool_choice
+        if isinstance(tc, str):
+            payload["tool_choice"] = tc
+        else:
+            tc_type = getattr(tc, "type", None)
+            if tc_type == "function":
+                name = getattr(getattr(tc, "function", None), "name", None)
+                choice: dict = {"type": "function"}
+                if name:
+                    choice["name"] = name
+                payload["tool_choice"] = choice
+            elif tc_type:
+                payload["tool_choice"] = {"type": tc_type}
+
+    # Match CLIProxyAPI Codex executor hardening.
+    payload.pop("previous_response_id", None)
+    payload.pop("prompt_cache_retention", None)
+    payload.pop("safety_identifier", None)
+
+    # Required / commonly expected Codex headers.
+    headers.setdefault("Openai-Beta", "responses=experimental")
+    headers.setdefault("Originator", "codex_cli_rs")
+    headers.setdefault("Version", "0.21.0")
+    session_id = str(uuid.uuid4())
+    headers.setdefault("Session_id", session_id)
+    headers.setdefault("Conversation_id", session_id)
+    headers.setdefault("User-Agent", "codex_cli_rs/0.50.0")
+    headers.setdefault("Connection", "Keep-Alive")
+    headers.setdefault("Accept", "text/event-stream" if request.stream else "application/json")
+
+    overrides = safe_get(provider, "preferences", "post_body_parameter_overrides", default={}) or {}
+    if isinstance(overrides, dict):
+        model_overrides = overrides.get(request.model)
+        if isinstance(model_overrides, dict):
+            for k, v in model_overrides.items():
+                payload[k] = v
 
     return url, headers, payload
 
@@ -2551,6 +2742,8 @@ async def get_payload(request: RequestModel, engine, provider, api_key=None):
         return await get_azure_databricks_payload(request, engine, provider, api_key)
     elif engine == "claude":
         return await get_claude_payload(request, engine, provider, api_key)
+    elif engine == "codex":
+        return await get_codex_payload(request, engine, provider, api_key)
     elif engine == "gpt":
         provider['base_url'] = BaseAPI(provider['base_url']).chat_url
         return await get_gpt_payload(request, engine, provider, api_key)

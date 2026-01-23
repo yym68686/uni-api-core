@@ -110,6 +110,66 @@ def normalize_search_response(url: str, response_json: object) -> dict:
         "meta": {"provider": "unknown", "raw": response_json},
     }
 
+def _responses_output_to_text(response_json: dict) -> tuple[str, str]:
+    """
+    Best-effort extraction of text + reasoning text from an OpenAI Responses-style response.
+    Returns: (content, reasoning_content)
+    """
+    if not isinstance(response_json, dict):
+        return "", ""
+
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+
+    output_text = response_json.get("output_text")
+    if isinstance(output_text, str) and output_text:
+        content_parts.append(output_text)
+
+    output = response_json.get("output")
+    if isinstance(output, list):
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+
+            item_type = item.get("type")
+            if item_type in ("output_text", "text") and item.get("text"):
+                content_parts.append(str(item.get("text")))
+                continue
+            if item_type in ("reasoning_summary_text", "reasoning_text") and item.get("text"):
+                reasoning_parts.append(str(item.get("text")))
+                continue
+
+            if item_type != "message":
+                continue
+
+            role = (item.get("role") or "").lower()
+            if role and role not in ("assistant", "model"):
+                continue
+
+            msg_content = item.get("content")
+            if isinstance(msg_content, str) and msg_content:
+                content_parts.append(msg_content)
+                continue
+            if not isinstance(msg_content, list):
+                continue
+            for part in msg_content:
+                if not isinstance(part, dict):
+                    continue
+                part_type = part.get("type")
+                if part_type in ("output_text", "text") and part.get("text"):
+                    content_parts.append(str(part.get("text")))
+                elif part_type in ("reasoning_summary_text", "reasoning_text") and part.get("text"):
+                    reasoning_parts.append(str(part.get("text")))
+
+    return "".join(content_parts), "".join(reasoning_parts)
+
+def _is_responses_api_call(url: str, payload: dict) -> bool:
+    if "v1/responses" in (url or ""):
+        return True
+    if isinstance(payload, dict) and "input" in payload and "messages" not in payload:
+        return True
+    return False
+
 async def check_response(response, error_log):
     if response and not (200 <= response.status_code < 300):
         error_message = await response.aread()
@@ -768,6 +828,29 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
     if engine == "tts":
         yield response.read()
 
+    elif engine in ("gpt", "codex") and _is_responses_api_call(url, payload):
+        response_bytes = await response.aread()
+        response_json = await asyncio.to_thread(json.loads, response_bytes)
+
+        usage_obj = safe_get(response_json, "usage", default={}) or {}
+        prompt_tokens = usage_obj.get("input_tokens") or usage_obj.get("prompt_tokens") or 0
+        completion_tokens = usage_obj.get("output_tokens") or usage_obj.get("completion_tokens") or 0
+        total_tokens = usage_obj.get("total_tokens") or (prompt_tokens + completion_tokens)
+
+        content, reasoning_content = _responses_output_to_text(response_json)
+        timestamp = safe_get(response_json, "created", default=int(datetime.timestamp(datetime.now())))
+
+        yield await generate_no_stream_response(
+            timestamp,
+            model,
+            content=content or None,
+            role="assistant",
+            total_tokens=total_tokens,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            reasoning_content=reasoning_content or None,
+        )
+
     elif engine == "gemini" or engine == "vertex-gemini" or engine == "aws":
         response_bytes = await response.aread()
         response_json = await asyncio.to_thread(json.loads, response_bytes)
@@ -1056,7 +1139,7 @@ async def fetch_response_stream(client, url, headers, payload, engine, model, ti
     elif engine == "aws":
         async for chunk in fetch_aws_response_stream(client, url, headers, payload, model, timeout):
             yield chunk
-    elif engine == "gpt" or engine == "openrouter" or engine == "azure-databricks":
+    elif engine in ("gpt", "codex", "openrouter", "azure-databricks"):
         async for chunk in fetch_gpt_response_stream(client, url, headers, payload, timeout):
             yield chunk
     elif engine == "azure":
