@@ -623,7 +623,71 @@ end_of_line = "\n\n"
 # end_of_line = "\r"
 # end_of_line = "\n"
 
-async def generate_sse_response(timestamp, model, content=None, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=0, prompt_tokens=0, completion_tokens=0, reasoning_content=None, stop=None):
+def _coerce_non_negative_int(value, default: int = 0) -> int:
+    try:
+        value_int = int(value)
+    except Exception:
+        return default
+    return value_int if value_int > 0 else 0
+
+def _build_openai_usage(
+    *,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    cached_tokens: int = 0,
+    prompt_audio_tokens: int = 0,
+    reasoning_tokens: int = 0,
+    completion_audio_tokens: int = 0,
+    accepted_prediction_tokens: int = 0,
+    rejected_prediction_tokens: int = 0,
+) -> dict:
+    prompt_tokens = _coerce_non_negative_int(prompt_tokens)
+    completion_tokens = _coerce_non_negative_int(completion_tokens)
+    total_tokens = _coerce_non_negative_int(total_tokens)
+    cached_tokens = _coerce_non_negative_int(cached_tokens)
+    prompt_audio_tokens = _coerce_non_negative_int(prompt_audio_tokens)
+    reasoning_tokens = _coerce_non_negative_int(reasoning_tokens)
+    completion_audio_tokens = _coerce_non_negative_int(completion_audio_tokens)
+    accepted_prediction_tokens = _coerce_non_negative_int(accepted_prediction_tokens)
+    rejected_prediction_tokens = _coerce_non_negative_int(rejected_prediction_tokens)
+
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "prompt_tokens_details": {
+            "cached_tokens": cached_tokens,
+            "audio_tokens": prompt_audio_tokens,
+        },
+        "completion_tokens_details": {
+            "reasoning_tokens": reasoning_tokens,
+            "audio_tokens": completion_audio_tokens,
+            "accepted_prediction_tokens": accepted_prediction_tokens,
+            "rejected_prediction_tokens": rejected_prediction_tokens,
+        },
+    }
+
+async def generate_sse_response(
+    timestamp,
+    model,
+    content=None,
+    tools_id=None,
+    function_call_name=None,
+    function_call_content=None,
+    role=None,
+    total_tokens=0,
+    prompt_tokens=0,
+    completion_tokens=0,
+    reasoning_content=None,
+    stop=None,
+    cached_tokens=0,
+    prompt_audio_tokens=0,
+    reasoning_tokens=0,
+    completion_audio_tokens=0,
+    accepted_prediction_tokens=0,
+    rejected_prediction_tokens=0,
+):
     random.seed(timestamp)
     random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=29))
 
@@ -655,7 +719,17 @@ async def generate_sse_response(timestamp, model, content=None, tools_id=None, f
     if role:
         sample_data["choices"][0]["delta"] = {"role": role, "content": ""}
     if total_tokens:
-        sample_data["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": total_tokens}
+        sample_data["usage"] = _build_openai_usage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            cached_tokens=cached_tokens,
+            prompt_audio_tokens=prompt_audio_tokens,
+            reasoning_tokens=reasoning_tokens,
+            completion_audio_tokens=completion_audio_tokens,
+            accepted_prediction_tokens=accepted_prediction_tokens,
+            rejected_prediction_tokens=rejected_prediction_tokens,
+        )
         sample_data["choices"] = []
     if stop:
         sample_data["choices"][0]["delta"] = {}
@@ -669,7 +743,27 @@ async def generate_sse_response(timestamp, model, content=None, tools_id=None, f
 
     return sse_response
 
-async def generate_no_stream_response(timestamp, model, content=None, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=0, prompt_tokens=0, completion_tokens=0, reasoning_content=None, image_base64=None, audio=None):
+async def generate_no_stream_response(
+    timestamp,
+    model,
+    content=None,
+    tools_id=None,
+    function_call_name=None,
+    function_call_content=None,
+    role=None,
+    total_tokens=0,
+    prompt_tokens=0,
+    completion_tokens=0,
+    reasoning_content=None,
+    image_base64=None,
+    audio=None,
+    cached_tokens=0,
+    prompt_audio_tokens=0,
+    reasoning_tokens=0,
+    completion_audio_tokens=0,
+    accepted_prediction_tokens=0,
+    rejected_prediction_tokens=0,
+):
     random.seed(timestamp)
     random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=29))
     message = {
@@ -754,7 +848,17 @@ async def generate_no_stream_response(timestamp, model, content=None, tools_id=N
         }
 
     if total_tokens:
-        sample_data["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": total_tokens}
+        sample_data["usage"] = _build_openai_usage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            cached_tokens=cached_tokens,
+            prompt_audio_tokens=prompt_audio_tokens,
+            reasoning_tokens=reasoning_tokens,
+            completion_audio_tokens=completion_audio_tokens,
+            accepted_prediction_tokens=accepted_prediction_tokens,
+            rejected_prediction_tokens=rejected_prediction_tokens,
+        )
 
     json_data = await asyncio.to_thread(json.dumps, sample_data, ensure_ascii=False)
     # print("json_data", json.dumps(sample_data, indent=4, ensure_ascii=False))

@@ -185,16 +185,21 @@ async def gemini_json_poccess(response_json):
     promptTokenCount = 0
     candidatesTokenCount = 0
     totalTokenCount = 0
+    cachedContentTokenCount = 0
+    thoughtsTokenCount = 0
     image_base64 = None
     audio_b64_wav = None
     tools_id = None
 
     json_data = safe_get(response_json, "candidates", 0, "content", default=None)
     finishReason = safe_get(response_json, "candidates", 0 , "finishReason", default=None)
-    if finishReason:
-        promptTokenCount = safe_get(response_json, "usageMetadata", "promptTokenCount", default=0)
-        candidatesTokenCount = safe_get(response_json, "usageMetadata", "candidatesTokenCount", default=0)
-        totalTokenCount = safe_get(response_json, "usageMetadata", "totalTokenCount", default=0)
+    usage_metadata = response_json.get("usageMetadata") if isinstance(response_json, dict) else None
+    if finishReason and isinstance(usage_metadata, dict):
+        promptTokenCount = usage_metadata.get("promptTokenCount", promptTokenCount) or 0
+        candidatesTokenCount = usage_metadata.get("candidatesTokenCount", candidatesTokenCount) or 0
+        totalTokenCount = usage_metadata.get("totalTokenCount", totalTokenCount) or 0
+        cachedContentTokenCount = usage_metadata.get("cachedContentTokenCount", cachedContentTokenCount) or 0
+        thoughtsTokenCount = usage_metadata.get("thoughtsTokenCount", thoughtsTokenCount) or 0
         if finishReason != "STOP":
             logger.error(f"finishReason: {finishReason}")
 
@@ -247,7 +252,23 @@ async def gemini_json_poccess(response_json):
 
     blockReason = safe_get(json_data, 0, "promptFeedback", "blockReason", default=None)
 
-    return is_thinking, reasoning_content, content, image_base64, audio_b64_wav, function_call_name, function_full_response, tools_id, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount
+    return (
+        is_thinking,
+        reasoning_content,
+        content,
+        image_base64,
+        audio_b64_wav,
+        function_call_name,
+        function_full_response,
+        tools_id,
+        finishReason,
+        blockReason,
+        promptTokenCount,
+        candidatesTokenCount,
+        totalTokenCount,
+        cachedContentTokenCount,
+        thoughtsTokenCount,
+    )
 
 async def fetch_gemini_response_stream(client, url, headers, payload, model, timeout):
     timestamp = int(datetime.timestamp(datetime.now()))
@@ -261,6 +282,8 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
         promptTokenCount = 0
         candidatesTokenCount = 0
         totalTokenCount = 0
+        cachedContentTokenCount = 0
+        thoughtsTokenCount = 0
         parts_json = ""
         async for chunk in response.aiter_text():
             buffer += chunk
@@ -285,7 +308,23 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                         continue
 
                 # https://ai.google.dev/api/generate-content?hl=zh-cn#FinishReason
-                is_thinking, reasoning_content, content, image_base64, audio_b64_wav, function_call_name, function_full_response, tools_id, finishReason, blockReason, promptTokenCount, candidatesTokenCount, totalTokenCount = await gemini_json_poccess(response_json)
+                (
+                    is_thinking,
+                    reasoning_content,
+                    content,
+                    image_base64,
+                    audio_b64_wav,
+                    function_call_name,
+                    function_full_response,
+                    tools_id,
+                    finishReason,
+                    blockReason,
+                    promptTokenCount,
+                    candidatesTokenCount,
+                    totalTokenCount,
+                    cachedContentTokenCount,
+                    thoughtsTokenCount,
+                ) = await gemini_json_poccess(response_json)
 
                 if is_thinking and reasoning_content:
                     sse_string = await generate_sse_response(timestamp, model, reasoning_content=reasoning_content)
@@ -296,7 +335,23 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
 
                 if image_base64:
                     if "gemini-2.5-flash-image" not in model and "gemini-3-pro-image" not in model:
-                        yield await generate_no_stream_response(timestamp, model, content=content, tools_id=None, function_call_name=None, function_call_content=None, role=None, total_tokens=totalTokenCount, prompt_tokens=promptTokenCount, completion_tokens=candidatesTokenCount, image_base64=image_base64)
+                        completion_tokens = candidatesTokenCount + thoughtsTokenCount
+                        openai_total_tokens = totalTokenCount or (promptTokenCount + completion_tokens)
+                        yield await generate_no_stream_response(
+                            timestamp,
+                            model,
+                            content=content,
+                            tools_id=None,
+                            function_call_name=None,
+                            function_call_content=None,
+                            role=None,
+                            total_tokens=openai_total_tokens,
+                            prompt_tokens=promptTokenCount,
+                            completion_tokens=completion_tokens,
+                            cached_tokens=cachedContentTokenCount,
+                            reasoning_tokens=thoughtsTokenCount,
+                            image_base64=image_base64,
+                        )
                     else:
                         sse_string = await generate_sse_response(timestamp, model, content=f"\n![image](data:image/png;base64,{image_base64})")
                         yield sse_string
@@ -316,9 +371,11 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                         function_call_name=None,
                         function_call_content=None,
                         role="assistant",
-                        total_tokens=totalTokenCount,
+                        total_tokens=totalTokenCount or (promptTokenCount + candidatesTokenCount + thoughtsTokenCount),
                         prompt_tokens=promptTokenCount,
-                        completion_tokens=candidatesTokenCount,
+                        completion_tokens=candidatesTokenCount + thoughtsTokenCount,
+                        cached_tokens=cachedContentTokenCount,
+                        reasoning_tokens=thoughtsTokenCount,
                         audio=audio_obj,
                     )
 
@@ -339,7 +396,22 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
 
                 parts_json = ""
 
-        sse_string = await generate_sse_response(timestamp, model, None, None, None, None, None, totalTokenCount, promptTokenCount, candidatesTokenCount)
+        completion_tokens = candidatesTokenCount + thoughtsTokenCount
+        openai_total_tokens = totalTokenCount or (promptTokenCount + completion_tokens)
+        sse_string = await generate_sse_response(
+            timestamp,
+            model,
+            None,
+            None,
+            None,
+            None,
+            None,
+            openai_total_tokens,
+            promptTokenCount,
+            completion_tokens,
+            cached_tokens=cachedContentTokenCount,
+            reasoning_tokens=thoughtsTokenCount,
+        )
         yield sse_string
 
     yield "data: [DONE]" + end_of_line
@@ -691,6 +763,7 @@ async def fetch_claude_response_stream(client, url, headers, payload, model, tim
             return
         buffer = ""
         input_tokens = 0
+        cache_read_input_tokens = 0
         async for chunk in response.aiter_text():
             # logger.info(f"chunk: {repr(chunk)}")
             buffer += chunk
@@ -701,13 +774,24 @@ async def fetch_claude_response_stream(client, url, headers, payload, model, tim
                 if line.startswith("data:") and (line := line.lstrip("data: ")):
                     resp: dict = await asyncio.to_thread(json.loads, line)
 
-                    input_tokens = input_tokens or safe_get(resp, "message", "usage", "input_tokens", default=0)
-                    # cache_creation_input_tokens = safe_get(resp, "message", "usage", "cache_creation_input_tokens", default=0)
-                    # cache_read_input_tokens = safe_get(resp, "message", "usage", "cache_read_input_tokens", default=0)
+                    input_tokens = input_tokens or safe_get(resp, "message", "usage", "input_tokens", default=0) or safe_get(resp, "usage", "input_tokens", default=0)
+                    cache_read_input_tokens = cache_read_input_tokens or safe_get(resp, "message", "usage", "cache_read_input_tokens", default=0) or safe_get(resp, "usage", "cache_read_input_tokens", default=0)
                     output_tokens = safe_get(resp, "usage", "output_tokens", default=0)
                     if output_tokens:
                         total_tokens = input_tokens + output_tokens
-                        sse_string = await generate_sse_response(timestamp, model, None, None, None, None, None, total_tokens, input_tokens, output_tokens)
+                        sse_string = await generate_sse_response(
+                            timestamp,
+                            model,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            total_tokens,
+                            input_tokens,
+                            output_tokens,
+                            cached_tokens=cache_read_input_tokens,
+                        )
                         yield sse_string
                         break
 
@@ -903,6 +987,10 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         prompt_tokens = safe_get(usage_metadata, "promptTokenCount", default=0)
         candidates_tokens = safe_get(usage_metadata, "candidatesTokenCount", default=0)
         total_tokens = safe_get(usage_metadata, "totalTokenCount", default=0)
+        cached_tokens = safe_get(usage_metadata, "cachedContentTokenCount", default=0)
+        reasoning_tokens = safe_get(usage_metadata, "thoughtsTokenCount", default=0)
+        completion_tokens = candidates_tokens + reasoning_tokens
+        openai_total_tokens = total_tokens or (prompt_tokens + completion_tokens)
 
         role = safe_get(parsed_data, -1, "candidates", 0, "content", "role")
         if role == "model":
@@ -940,10 +1028,12 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
             function_call_name=function_call_name,
             function_call_content=function_call_content,
             role=role,
-            total_tokens=total_tokens,
+            total_tokens=openai_total_tokens,
             prompt_tokens=prompt_tokens,
-            completion_tokens=candidates_tokens,
+            completion_tokens=completion_tokens,
             reasoning_content=reasoning_content,
+            cached_tokens=cached_tokens,
+            reasoning_tokens=reasoning_tokens,
             image_base64=image_base64,
             audio=audio_obj,
         )
@@ -955,8 +1045,9 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
 
         content = safe_get(response_json, "content", 0, "text")
 
-        prompt_tokens = safe_get(response_json, "usage", "input_tokens")
-        output_tokens = safe_get(response_json, "usage", "output_tokens")
+        prompt_tokens = safe_get(response_json, "usage", "input_tokens", default=0)
+        cached_tokens = safe_get(response_json, "usage", "cache_read_input_tokens", default=0)
+        output_tokens = safe_get(response_json, "usage", "output_tokens", default=0)
         total_tokens = prompt_tokens + output_tokens
 
         role = safe_get(response_json, "role")
@@ -966,7 +1057,19 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         tools_id = safe_get(response_json, "content", 1, "id", default=None)
 
         timestamp = int(datetime.timestamp(datetime.now()))
-        yield await generate_no_stream_response(timestamp, model, content=content, tools_id=tools_id, function_call_name=function_call_name, function_call_content=function_call_content, role=role, total_tokens=total_tokens, prompt_tokens=prompt_tokens, completion_tokens=output_tokens)
+        yield await generate_no_stream_response(
+            timestamp,
+            model,
+            content=content,
+            tools_id=tools_id,
+            function_call_name=function_call_name,
+            function_call_content=function_call_content,
+            role=role,
+            total_tokens=total_tokens,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=output_tokens,
+            cached_tokens=cached_tokens,
+        )
 
     elif engine == "azure":
         response_bytes = await response.aread()
