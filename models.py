@@ -184,10 +184,18 @@ class RequestModel(BaseRequest):
 class ImageGenerationRequest(BaseRequest):
     prompt: str
     model: Optional[str] = "dall-e-3"
-    n:  Optional[int] = 1
+    # OpenAI Images API (and some third-party upstreams) may use newer fields like
+    # image_size/aspect_ratio. Keep them optional and pass-through when provided.
+    image_size: Optional[str] = None
+    aspect_ratio: Optional[str] = None
+
+    n: Optional[int] = 1
     response_format: Optional[str] = "url"
     size: Optional[str] = "1024x1024"
     stream: bool = False
+
+    class Config:
+        extra = "allow"
 
 class EmbeddingRequest(BaseRequest):
     input: Union[str, List[Union[str, int, List[int]]]]  # 支持字符串或数组

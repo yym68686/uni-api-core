@@ -2376,13 +2376,13 @@ async def get_dalle_payload(request, engine, provider, api_key=None):
     url = provider['base_url']
     url = BaseAPI(url).image_url
 
-    payload = {
-        "model": original_model,
-        "prompt": request.prompt,
-        "n": request.n,
-        "response_format": request.response_format,
-        "size": request.size
-    }
+    # Keep image payload minimal: only include fields explicitly provided by the client
+    # (so we don't inject defaults like n/size/response_format), and pass through
+    # newer optional fields (e.g. image_size/aspect_ratio) when present.
+    payload = request.model_dump(exclude_unset=True)
+    payload.pop("stream", None)
+    payload["model"] = original_model
+    payload.setdefault("prompt", request.prompt)
 
     return url, headers, payload
 
