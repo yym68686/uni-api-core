@@ -865,6 +865,102 @@ async def generate_no_stream_response(
 
     return json_data
 
+async def collect_openai_chat_completion_from_streaming_sse(
+    sse_generator,
+    *,
+    model: str,
+    role: str = "assistant",
+) -> str:
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    usage_obj: dict | None = None
+    created_ts: int | None = None
+
+    async for item in sse_generator:
+        if item is None:
+            continue
+        if isinstance(item, (bytes, bytearray)):
+            try:
+                item = item.decode("utf-8", errors="replace")
+            except Exception:
+                item = str(item)
+        text = str(item).strip()
+        if not text or text.startswith(":"):
+            continue
+
+        if text.startswith("data:"):
+            data_str = text[len("data:"):].strip()
+        else:
+            data_str = text
+
+        if data_str == "[DONE]":
+            break
+
+        try:
+            chunk = json.loads(data_str)
+        except Exception:
+            continue
+        if not isinstance(chunk, dict):
+            continue
+
+        if created_ts is None:
+            try:
+                created_ts = int(chunk.get("created"))
+            except Exception:
+                created_ts = None
+
+        choices = chunk.get("choices")
+        usage = chunk.get("usage")
+        if (not choices) and isinstance(usage, dict):
+            usage_obj = usage
+            continue
+
+        if not isinstance(choices, list):
+            continue
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta") or {}
+            if not isinstance(delta, dict):
+                continue
+            content = delta.get("content")
+            if content is not None:
+                content_parts.append(str(content))
+            reasoning_content = delta.get("reasoning_content")
+            if reasoning_content is not None:
+                reasoning_parts.append(str(reasoning_content))
+
+    prompt_tokens = int(safe_get(usage_obj, "prompt_tokens", default=0) or 0)
+    completion_tokens = int(safe_get(usage_obj, "completion_tokens", default=0) or 0)
+    total_tokens = int(safe_get(usage_obj, "total_tokens", default=0) or 0)
+    cached_tokens = int(safe_get(usage_obj, "prompt_tokens_details", "cached_tokens", default=0) or 0)
+    prompt_audio_tokens = int(safe_get(usage_obj, "prompt_tokens_details", "audio_tokens", default=0) or 0)
+    reasoning_tokens = int(safe_get(usage_obj, "completion_tokens_details", "reasoning_tokens", default=0) or 0)
+    completion_audio_tokens = int(safe_get(usage_obj, "completion_tokens_details", "audio_tokens", default=0) or 0)
+    accepted_prediction_tokens = int(safe_get(usage_obj, "completion_tokens_details", "accepted_prediction_tokens", default=0) or 0)
+    rejected_prediction_tokens = int(safe_get(usage_obj, "completion_tokens_details", "rejected_prediction_tokens", default=0) or 0)
+
+    content_text = "".join(content_parts)
+    reasoning_text = "".join(reasoning_parts)
+
+    timestamp = created_ts if created_ts is not None else int(time())
+    return await generate_no_stream_response(
+        timestamp,
+        model,
+        content=content_text or None,
+        role=role,
+        total_tokens=total_tokens or (prompt_tokens + completion_tokens),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        reasoning_content=reasoning_text or None,
+        cached_tokens=cached_tokens,
+        prompt_audio_tokens=prompt_audio_tokens,
+        reasoning_tokens=reasoning_tokens,
+        completion_audio_tokens=completion_audio_tokens,
+        accepted_prediction_tokens=accepted_prediction_tokens,
+        rejected_prediction_tokens=rejected_prediction_tokens,
+    )
+
 def _parse_gemini_audio_rate(mime_type: str) -> int | None:
     if not mime_type:
         return None
