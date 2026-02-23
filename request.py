@@ -46,6 +46,10 @@ def _decode_gemini_thought_signature_from_tool_call_id(tool_call_id: str | None)
     if not tool_call_id or not tool_call_id.startswith("call_"):
         return None
     encoded = tool_call_id.removeprefix("call_")
+    # Allow a nonce suffix (call_<b64url(thoughtSignature)>.<nonce>) to keep tool_call_id unique.
+    # Only the first segment encodes the thoughtSignature.
+    if "." in encoded:
+        encoded = encoded.split(".", 1)[0]
     if not encoded:
         return None
     padded = encoded + ("=" * ((4 - (len(encoded) % 4)) % 4))

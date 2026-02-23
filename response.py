@@ -3,6 +3,7 @@ import json
 import random
 import string
 import base64
+import uuid
 import asyncio
 from datetime import datetime
 from urllib.parse import urlparse
@@ -248,7 +249,10 @@ async def gemini_json_poccess(response_json):
             thought_signature = safe_get(json_data, "parts", 0, "thought_signature", default=None)
         if thought_signature:
             encoded = base64.urlsafe_b64encode(thought_signature.encode("utf-8")).decode("ascii").rstrip("=")
-            tools_id = f"call_{encoded}"
+            # Gemini's thoughtSignature is not guaranteed to be unique per tool call.
+            # Append a nonce to satisfy OpenAI tool_call.id uniqueness while still
+            # allowing us to recover thoughtSignature from the ID later.
+            tools_id = f"call_{encoded}.{uuid.uuid4().hex}"
 
     blockReason = safe_get(json_data, 0, "promptFeedback", "blockReason", default=None)
 
@@ -1006,6 +1010,34 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
             function_message_parts_index = 0
         function_call_name = safe_get(parsed_data, -1, "candidates", 0, "content", "parts", function_message_parts_index, "functionCall", "name", default=None)
         function_call_content = safe_get(parsed_data, -1, "candidates", 0, "content", "parts", function_message_parts_index, "functionCall", "args", default=None)
+        tools_id = None
+        if engine in ("gemini", "vertex-gemini") and function_call_name:
+            thought_sig_fc = safe_get(
+                parsed_data,
+                -1,
+                "candidates",
+                0,
+                "content",
+                "parts",
+                function_message_parts_index,
+                "thoughtSignature",
+                default=None,
+            )
+            if not thought_sig_fc:
+                thought_sig_fc = safe_get(
+                    parsed_data,
+                    -1,
+                    "candidates",
+                    0,
+                    "content",
+                    "parts",
+                    function_message_parts_index,
+                    "thought_signature",
+                    default=None,
+                )
+            if thought_sig_fc:
+                encoded = base64.urlsafe_b64encode(str(thought_sig_fc).encode("utf-8")).decode("ascii").rstrip("=")
+                tools_id = f"call_{encoded}.{uuid.uuid4().hex}"
 
         timestamp = int(datetime.timestamp(datetime.now()))
         audio_obj = None
@@ -1024,7 +1056,7 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
             timestamp,
             model,
             content=content,
-            tools_id=None,
+            tools_id=tools_id,
             function_call_name=function_call_name,
             function_call_content=function_call_content,
             role=role,
