@@ -1501,6 +1501,11 @@ def _codex_responses_url(base_url: str) -> str:
         return base
     return f"{base}/responses"
 
+def strip_unsupported_codex_payload_fields(payload: dict) -> dict:
+    # Codex rejects this Responses API field; drop it on any Codex-bound request.
+    payload.pop("max_output_tokens", None)
+    return payload
+
 def _codex_chat_messages_to_responses_input(request: RequestModel, provider: dict) -> list[dict]:
     input_items: list[dict] = []
 
@@ -1678,6 +1683,7 @@ async def get_codex_payload(request, engine, provider, api_key=None):
             for k, v in model_overrides.items():
                 payload[k] = v
 
+    strip_unsupported_codex_payload_fields(payload)
     return url, headers, payload
 
 def build_azure_endpoint(base_url, deployment_id, api_version="2025-01-01-preview"):
