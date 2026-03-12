@@ -460,9 +460,11 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 # 如果转换为整数失败，忽略思考预算设置
                 pass
         else:
-            payload["generationConfig"]["thinkingConfig"] = {
-                "includeThoughts": True,
-            }
+            # gemini-2.5-flash-lite 默认不启用 thinking，不能单独设置 includeThoughts
+            if "gemini-2.5-flash-lite" not in original_model:
+                payload["generationConfig"]["thinkingConfig"] = {
+                    "includeThoughts": True,
+                }
 
     # Gemini 3 系列的 thinkingLevel 处理
     if "gemini-3" in original_model:
@@ -844,9 +846,11 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                 # 如果转换为整数失败，忽略思考预算设置
                 pass
         else:
-            payload["generationConfig"]["thinkingConfig"] = {
-                "includeThoughts": True,
-            }
+            # gemini-2.5-flash-lite 默认不启用 thinking，不能单独设置 includeThoughts
+            if "gemini-2.5-flash-lite" not in original_model:
+                payload["generationConfig"]["thinkingConfig"] = {
+                    "includeThoughts": True,
+                }
 
     # Gemini 3 系列的 thinkingLevel 处理
     if "gemini-3" in original_model:
