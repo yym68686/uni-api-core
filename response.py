@@ -338,7 +338,7 @@ async def fetch_gemini_response_stream(client, url, headers, payload, model, tim
                     yield sse_string
 
                 if image_base64:
-                    if "gemini-2.5-flash-image" not in model and "gemini-3-pro-image" not in model:
+                    if "flash-image" not in model and "pro-image" not in model:
                         completion_tokens = candidatesTokenCount + thoughtsTokenCount
                         openai_total_tokens = totalTokenCount or (promptTokenCount + completion_tokens)
                         yield await generate_no_stream_response(
