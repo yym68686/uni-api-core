@@ -130,6 +130,38 @@ def _format_to_mime(format_value: str | None) -> str | None:
     }
     return mapping.get(fmt, f"audio/{fmt}")
 
+
+def apply_post_body_parameter_overrides(
+    payload: dict,
+    provider: dict,
+    request_model: str,
+    *,
+    skip_keys: set[str] | None = None,
+) -> dict:
+    overrides = safe_get(provider, "preferences", "post_body_parameter_overrides", default={}) or {}
+    if not isinstance(overrides, dict):
+        return payload
+
+    model_dict = provider.get("_model_dict_cache")
+    if not isinstance(model_dict, dict):
+        model_dict = get_model_dict(provider)
+
+    skipped = skip_keys or set()
+
+    model_overrides = overrides.get(request_model)
+    if isinstance(model_overrides, dict):
+        for key, value in model_overrides.items():
+            if key in skipped:
+                continue
+            payload[key] = value
+
+    for key, value in overrides.items():
+        if key in model_dict or key in skipped:
+            continue
+        payload[key] = value
+
+    return payload
+
 def _build_gemini_input_audio_part(item):
     input_audio = getattr(item, "input_audio", None)
     if not input_audio or not getattr(input_audio, "data", None):
@@ -519,13 +551,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 payload["generationConfig"]["thinkingConfig"] = {}
             payload["generationConfig"]["thinkingConfig"]["thinkingLevel"] = thinking_level
 
-    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
-        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
-            if key == request.model:
-                for k, v in value.items():
-                    payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
-                payload[key] = value
+    apply_post_body_parameter_overrides(payload, provider, request.model)
 
     return url, headers, payload
 
@@ -905,13 +931,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                 payload["generationConfig"]["thinkingConfig"] = {}
             payload["generationConfig"]["thinkingConfig"]["thinkingLevel"] = thinking_level
 
-    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
-        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
-            if key == request.model:
-                for k, v in value.items():
-                    payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
-                payload[key] = value
+    apply_post_body_parameter_overrides(payload, provider, request.model)
 
     # Map OpenAI-style audio request fields to Gemini TTS/generateContent config.
     if "generationConfig" not in payload:
@@ -1485,13 +1505,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
                     }
                 })
 
-    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
-        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
-            if key == request.model:
-                for k, v in value.items():
-                    payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
-                payload[key] = value
+    apply_post_body_parameter_overrides(payload, provider, request.model)
 
     return url, headers, payload
 
@@ -1680,12 +1694,7 @@ async def get_codex_payload(request, engine, provider, api_key=None):
     headers.setdefault("Connection", "Keep-Alive")
     headers.setdefault("Accept", "text/event-stream" if request.stream else "application/json")
 
-    overrides = safe_get(provider, "preferences", "post_body_parameter_overrides", default={}) or {}
-    if isinstance(overrides, dict):
-        model_overrides = overrides.get(request.model)
-        if isinstance(model_overrides, dict):
-            for k, v in model_overrides.items():
-                payload[k] = v
+    apply_post_body_parameter_overrides(payload, provider, request.model)
 
     strip_unsupported_codex_payload_fields(payload)
     return url, headers, payload
@@ -1784,13 +1793,7 @@ async def get_azure_payload(request, engine, provider, api_key=None):
         payload.pop("tools", None)
         payload.pop("tool_choice", None)
 
-    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
-        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
-            if key == request.model:
-                for k, v in value.items():
-                    payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
-                payload[key] = value
+    apply_post_body_parameter_overrides(payload, provider, request.model)
 
     return url, headers, payload
 
@@ -1910,13 +1913,7 @@ async def get_azure_databricks_payload(request, engine, provider, api_key=None):
         payload.pop("top_p", None)
         payload.pop("top_k", None)
 
-    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
-        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
-            if key == request.model:
-                for k, v in value.items():
-                    payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
-                payload[key] = value
+    apply_post_body_parameter_overrides(payload, provider, request.model)
 
     return url, headers, payload
 
@@ -2003,13 +2000,7 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
         if field not in miss_fields and value is not None:
             payload[field] = value
 
-    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
-        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
-            if key == request.model:
-                for k, v in value.items():
-                    payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
-                payload[key] = value
+    apply_post_body_parameter_overrides(payload, provider, request.model)
 
     return url, headers, payload
 
@@ -2369,13 +2360,7 @@ async def get_claude_payload(request, engine, provider, api_key=None):
         payload.pop("top_k", None)
     # print("payload", json.dumps(payload, indent=2, ensure_ascii=False))
 
-    if safe_get(provider, "preferences", "post_body_parameter_overrides", default=None):
-        for key, value in safe_get(provider, "preferences", "post_body_parameter_overrides", default={}).items():
-            if key == request.model:
-                for k, v in value.items():
-                    payload[k] = v
-            elif all(_model not in request.model.lower() for _model in model_dict.keys()) and "-" not in key and " " not in key:
-                payload[key] = value
+    apply_post_body_parameter_overrides(payload, provider, request.model)
 
     return url, headers, payload
 
@@ -2687,11 +2672,12 @@ async def get_doubao_translation_payload(request: RequestModel, engine, provider
     if request.stream:
         payload["stream"] = True
 
-    if isinstance(model_overrides, dict):
-        for k, v in model_overrides.items():
-            if k == "translation_options":
-                continue
-            payload[k] = v
+    apply_post_body_parameter_overrides(
+        payload,
+        provider,
+        request.model,
+        skip_keys={"translation_options"},
+    )
 
     return url, headers, payload
 
