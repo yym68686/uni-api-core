@@ -1520,8 +1520,9 @@ def _codex_responses_url(base_url: str) -> str:
     return f"{base}/responses"
 
 def strip_unsupported_codex_payload_fields(payload: dict) -> dict:
-    # Codex rejects this Responses API field; drop it on any Codex-bound request.
+    # Codex rejects these fields; drop them on any Codex-bound request.
     payload.pop("max_output_tokens", None)
+    payload.pop("response_format", None)
     return payload
 
 def _codex_chat_messages_to_responses_input(request: RequestModel, provider: dict) -> list[dict]:
