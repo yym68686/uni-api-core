@@ -86,6 +86,11 @@ class Thinking(BaseModel):
     budget_tokens: Optional[int] = None
     type: Optional[Literal["enabled", "disabled"]] = None
 
+class Reasoning(BaseModel):
+    effort: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
 class StreamOptions(BaseModel):
     include_usage: Optional[bool] = None
 
@@ -119,6 +124,7 @@ class RequestModel(BaseRequest):
     tools: Optional[List[Tool]] = None
     response_format: Optional[ResponseFormat] = None
     thinking: Optional[Thinking] = None
+    reasoning: Optional[Reasoning] = Field(default=None, exclude=True)
     stream_options: Optional[StreamOptions] = None
     chat_template_kwargs: Optional[Dict[str, Any]] = None
 

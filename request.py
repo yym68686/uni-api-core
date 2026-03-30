@@ -162,6 +162,104 @@ def apply_post_body_parameter_overrides(
 
     return payload
 
+def _request_reasoning_effort(request: RequestModel) -> str | None:
+    reasoning = getattr(request, "reasoning", None)
+    effort = getattr(reasoning, "effort", None) if reasoning else None
+    if not effort:
+        return None
+    effort = str(effort).strip().lower()
+    return effort or None
+
+def _gemini_2_5_thinking_budget_from_request_model(request_model: str, original_model: str) -> int | None:
+    match = re.match(r".*-think-(-?\d+)", request_model)
+    if not match:
+        return None
+
+    try:
+        val = int(match.group(1))
+    except ValueError:
+        return None
+
+    if "gemini-2.5-pro" in original_model:
+        if val < 128:
+            return 128
+        if val > 32768:
+            return 32768
+        return val
+
+    if "gemini-2.5-flash-lite" in original_model:
+        if val > 0 and val < 512:
+            return 512
+        if val > 24576:
+            return 24576
+        return val if val >= 0 else 0
+
+    if val > 24576:
+        return 24576
+    return val if val >= 0 else 0
+
+def _gemini_3_thinking_level_from_request(request: RequestModel, original_model: str) -> str | None:
+    reasoning_effort = _request_reasoning_effort(request)
+    if reasoning_effort:
+        if "gemini-3-pro" in original_model:
+            if reasoning_effort == "high":
+                return "high"
+            if reasoning_effort in {"minimal", "low", "medium"}:
+                return "low"
+        elif reasoning_effort in {"minimal", "low", "medium", "high"}:
+            return reasoning_effort
+
+    match = re.match(r".*-think-(-?\d+)", request.model)
+    if match:
+        try:
+            val = int(match.group(1))
+            if "gemini-3-pro" in original_model:
+                if val <= 32768 * 0.4:
+                    return "low"
+                return "high"
+            if val <= 32768 * 0.1:
+                return "minimal"
+            if val <= 32768 * 0.3:
+                return "low"
+            if val <= 32768 * 0.6:
+                return "medium"
+            return "high"
+        except ValueError:
+            pass
+
+    level_match = re.search(r"-(minimal|low|medium|high)$", request.model.lower())
+    if not level_match:
+        return None
+
+    level_str = level_match.group(1)
+    if "gemini-3-pro" in original_model:
+        if level_str in {"minimal", "low", "medium"}:
+            return "low"
+        return "high"
+    return level_str
+
+def _apply_explicit_gemini_request_controls(payload: dict, request: RequestModel, original_model: str) -> None:
+    generation_config = payload.setdefault("generationConfig", {})
+
+    if "gemini-2.5" in original_model and "-image" not in original_model and "preview-tts" not in original_model.lower():
+        budget = _gemini_2_5_thinking_budget_from_request_model(request.model, original_model)
+        if budget is not None:
+            thinking_config = generation_config.get("thinkingConfig")
+            if not isinstance(thinking_config, dict):
+                thinking_config = {}
+                generation_config["thinkingConfig"] = thinking_config
+            thinking_config["includeThoughts"] = bool(budget)
+            thinking_config["thinkingBudget"] = budget
+
+    if "gemini-3" in original_model:
+        thinking_level = _gemini_3_thinking_level_from_request(request, original_model)
+        if thinking_level:
+            thinking_config = generation_config.get("thinkingConfig")
+            if not isinstance(thinking_config, dict):
+                thinking_config = {}
+                generation_config["thinkingConfig"] = thinking_config
+            thinking_config["thinkingLevel"] = thinking_level
+
 def _build_gemini_input_audio_part(item):
     input_audio = getattr(item, "input_audio", None)
     if not input_audio or not getattr(input_audio, "data", None):
@@ -364,6 +462,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
         # OpenAI-style audio fields (mapped into generationConfig for Gemini)
         'modalities',
         'audio',
+        'reasoning',
     ]
     generation_config = {}
 
@@ -453,44 +552,12 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
     # Gemini 2.5 系列的 thinkingConfig 处理
     # Note: preview TTS models do not support thinkingConfig.
     if "gemini-2.5" in original_model and "-image" not in original_model and "preview-tts" not in original_model.lower():
-        # 从请求模型名中检测思考预算设置
-        m = re.match(r".*-think-(-?\d+)", request.model)
-        if m:
-            try:
-                val = int(m.group(1))
-                budget = None
-                # gemini-2.5-pro: [128, 32768]
-                if "gemini-2.5-pro" in original_model:
-                    if val < 128:
-                        budget = 128
-                    elif val > 32768:
-                        budget = 32768
-                    else: # 128 <= val <= 32768
-                        budget = val
-
-                # gemini-2.5-flash-lite: [0] or [512, 24576]
-                elif "gemini-2.5-flash-lite" in original_model:
-                    if val > 0 and val < 512:
-                        budget = 512
-                    elif val > 24576:
-                        budget = 24576
-                    else: # Includes 0 and valid range, and clamps invalid negatives
-                        budget = val if val >= 0 else 0
-
-                # gemini-2.5-flash (and other gemini-2.5 models as a fallback): [0, 24576]
-                else:
-                    if val > 24576:
-                        budget = 24576
-                    else: # Includes 0 and valid range, and clamps invalid negatives
-                        budget = val if val >= 0 else 0
-
-                payload["generationConfig"]["thinkingConfig"] = {
-                    "includeThoughts": True if budget else False,
-                    "thinkingBudget": budget
-                }
-            except ValueError:
-                # 如果转换为整数失败，忽略思考预算设置
-                pass
+        budget = _gemini_2_5_thinking_budget_from_request_model(request.model, original_model)
+        if budget is not None:
+            payload["generationConfig"]["thinkingConfig"] = {
+                "includeThoughts": True if budget else False,
+                "thinkingBudget": budget
+            }
         else:
             # gemini-2.5-flash-lite 默认不启用 thinking，不能单独设置 includeThoughts
             if "gemini-2.5-flash-lite" not in original_model:
@@ -500,58 +567,14 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
 
     # Gemini 3 系列的 thinkingLevel 处理
     if "gemini-3" in original_model:
-        thinking_level = None
-
-        # 先尝试从模型名中提取数值型 thinking budget (如 gemini-3-pro-think-8192)
-        m = re.match(r".*-think-(-?\d+)", request.model)
-        if m:
-            try:
-                val = int(m.group(1))
-
-                # gemini-3-pro: 只支持 low/high 两档
-                # 将 32768 按 40% 分界
-                if "gemini-3-pro" in original_model:
-                    if val <= 32768*0.4:
-                        thinking_level = "low"
-                    else:  # > 32768*0.4:
-                        thinking_level = "high"
-
-                # gemini-3-flash: 支持 minimal/low/medium/high 四档
-                # 将 32768 分成四个区间
-                else:
-                    if val <= 32768*0.1:
-                        thinking_level = "minimal"
-                    elif val <= 32768*0.3:
-                        thinking_level = "low"
-                    elif val <= 32768*0.6:
-                        thinking_level = "medium"
-                    else:  # > 32768*0.6
-                        thinking_level = "high"
-            except ValueError:
-                pass
-
-        # 如果没有数值型，则从模型名中提取字符串型 thinking level (如 gemini-3-pro-low, gemini-3-flash-minimal)
-        if not thinking_level:
-            level_match = re.search(r"-(minimal|low|medium|high)$", request.model.lower())
-            if level_match:
-                level_str = level_match.group(1)
-
-                # Pro 只支持 low/high，如果是其他值则映射
-                if "gemini-3-pro" in original_model:
-                    if level_str in ["minimal", "low", "medium"]:
-                        thinking_level = "low"
-                    else:
-                        thinking_level = "high"
-                else:
-                    thinking_level = level_str
-
-        # 如果找到了 thinking level，添加到 generationConfig
+        thinking_level = _gemini_3_thinking_level_from_request(request, original_model)
         if thinking_level:
             if "thinkingConfig" not in payload["generationConfig"]:
                 payload["generationConfig"]["thinkingConfig"] = {}
             payload["generationConfig"]["thinkingConfig"]["thinkingLevel"] = thinking_level
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
+    _apply_explicit_gemini_request_controls(payload, request, original_model)
 
     return url, headers, payload
 
@@ -796,6 +819,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         # OpenAI-style audio fields (mapped into generationConfig for Gemini)
         'modalities',
         'audio',
+        'reasoning',
     ]
     generation_config = {}
 
@@ -833,44 +857,12 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
     # Gemini 2.5 系列的 thinkingConfig 处理
     # Note: preview TTS models do not support thinkingConfig.
     if "gemini-2.5" in original_model and "preview-tts" not in original_model.lower():
-        # 从请求模型名中检测思考预算设置
-        m = re.match(r".*-think-(-?\d+)", request.model)
-        if m:
-            try:
-                val = int(m.group(1))
-                budget = None
-                # gemini-2.5-pro: [128, 32768]
-                if "gemini-2.5-pro" in original_model:
-                    if val < 128:
-                        budget = 128
-                    elif val > 32768:
-                        budget = 32768
-                    else: # 128 <= val <= 32768
-                        budget = val
-
-                # gemini-2.5-flash-lite: [0] or [512, 24576]
-                elif "gemini-2.5-flash-lite" in original_model:
-                    if val > 0 and val < 512:
-                        budget = 512
-                    elif val > 24576:
-                        budget = 24576
-                    else: # Includes 0 and valid range, and clamps invalid negatives
-                        budget = val if val >= 0 else 0
-
-                # gemini-2.5-flash (and other gemini-2.5 models as a fallback): [0, 24576]
-                else:
-                    if val > 24576:
-                        budget = 24576
-                    else: # Includes 0 and valid range, and clamps invalid negatives
-                        budget = val if val >= 0 else 0
-
-                payload["generationConfig"]["thinkingConfig"] = {
-                    "includeThoughts": True if budget else False,
-                    "thinkingBudget": budget
-                }
-            except ValueError:
-                # 如果转换为整数失败，忽略思考预算设置
-                pass
+        budget = _gemini_2_5_thinking_budget_from_request_model(request.model, original_model)
+        if budget is not None:
+            payload["generationConfig"]["thinkingConfig"] = {
+                "includeThoughts": True if budget else False,
+                "thinkingBudget": budget
+            }
         else:
             # gemini-2.5-flash-lite 默认不启用 thinking，不能单独设置 includeThoughts
             if "gemini-2.5-flash-lite" not in original_model:
@@ -880,58 +872,14 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
 
     # Gemini 3 系列的 thinkingLevel 处理
     if "gemini-3" in original_model:
-        thinking_level = None
-
-        # 先尝试从模型名中提取数值型 thinking budget (如 gemini-3-pro-think-8192)
-        m = re.match(r".*-think-(-?\d+)", request.model)
-        if m:
-            try:
-                val = int(m.group(1))
-
-                # gemini-3-pro: 只支持 low/high 两档
-                # 将 32768 按 40% 分界
-                if "gemini-3-pro" in original_model:
-                    if val <= 32768 * 0.4:
-                        thinking_level = "low"
-                    else:  # > 32768*0.4
-                        thinking_level = "high"
-
-                # gemini-3-flash: 支持 minimal/low/medium/high 四档
-                # 将 32768 分成四个区间
-                else:
-                    if val <= 32768 * 0.1:
-                        thinking_level = "minimal"
-                    elif val <= 32768 * 0.3:
-                        thinking_level = "low"
-                    elif val <= 32768 * 0.6:
-                        thinking_level = "medium"
-                    else:  # > 32768*0.6
-                        thinking_level = "high"
-            except ValueError:
-                pass
-
-        # 如果没有数值型，则从模型名中提取字符串型 thinking level (如 gemini-3-pro-low, gemini-3-flash-minimal)
-        if not thinking_level:
-            level_match = re.search(r"-(minimal|low|medium|high)$", request.model.lower())
-            if level_match:
-                level_str = level_match.group(1)
-
-                # Pro 只支持 low/high，如果是其他值则映射
-                if "gemini-3-pro" in original_model:
-                    if level_str in ["minimal", "low", "medium"]:
-                        thinking_level = "low"
-                    else:
-                        thinking_level = "high"
-                else:
-                    thinking_level = level_str
-
-        # 如果找到了 thinking level，添加到 generationConfig
+        thinking_level = _gemini_3_thinking_level_from_request(request, original_model)
         if thinking_level:
             if "thinkingConfig" not in payload["generationConfig"]:
                 payload["generationConfig"]["thinkingConfig"] = {}
             payload["generationConfig"]["thinkingConfig"]["thinkingLevel"] = thinking_level
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
+    _apply_explicit_gemini_request_controls(payload, request, original_model)
 
     # Map OpenAI-style audio request fields to Gemini TTS/generateContent config.
     if "generationConfig" not in payload:
