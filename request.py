@@ -138,6 +138,22 @@ def apply_post_body_parameter_overrides(
     *,
     skip_keys: set[str] | None = None,
 ) -> dict:
+    removal_key = "__remove__"
+
+    def normalize_removals(value) -> list[str]:
+        if isinstance(value, str):
+            cleaned = value.strip()
+            return [cleaned] if cleaned else []
+        if isinstance(value, (list, tuple, set)):
+            removals: list[str] = []
+            for item in value:
+                if isinstance(item, str):
+                    cleaned = item.strip()
+                    if cleaned:
+                        removals.append(cleaned)
+            return removals
+        return []
+
     overrides = safe_get(provider, "preferences", "post_body_parameter_overrides", default={}) or {}
     if not isinstance(overrides, dict):
         return payload
@@ -151,14 +167,23 @@ def apply_post_body_parameter_overrides(
     model_overrides = overrides.get(request_model)
     if isinstance(model_overrides, dict):
         for key, value in model_overrides.items():
-            if key in skipped:
+            if key in skipped or key == removal_key:
                 continue
             payload[key] = value
+        for key in normalize_removals(model_overrides.get(removal_key)):
+            if key in skipped:
+                continue
+            payload.pop(key, None)
 
     for key, value in overrides.items():
-        if key in model_dict or key in skipped:
+        if key in model_dict or key in skipped or key == removal_key:
             continue
         payload[key] = value
+
+    for key in normalize_removals(overrides.get(removal_key)):
+        if key in skipped:
+            continue
+        payload.pop(key, None)
 
     return payload
 
