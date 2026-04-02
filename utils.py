@@ -763,6 +763,7 @@ async def generate_no_stream_response(
     completion_audio_tokens=0,
     accepted_prediction_tokens=0,
     rejected_prediction_tokens=0,
+    tool_calls_list=None,
 ):
     random.seed(timestamp)
     random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=29))
@@ -834,6 +835,31 @@ async def generate_no_stream_response(
             "system_fingerprint": "fp_4691090a87"
         }
 
+    if tool_calls_list:
+        random_str_tc = ''.join(random.choices(string.ascii_letters + string.digits, k=29))
+        sample_data = {
+            "id": f"chatcmpl-{random_str_tc}",
+            "object": "chat.completion",
+            "created": timestamp,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": tool_calls_list,
+                        "refusal": None
+                    },
+                    "logprobs": None,
+                    "finish_reason": "tool_calls"
+                }
+            ],
+            "usage": None,
+            "service_tier": "default",
+            "system_fingerprint": "fp_4691090a87"
+        }
+
     if image_base64:
         sample_data = {
             "created": timestamp,
@@ -875,6 +901,8 @@ async def collect_openai_chat_completion_from_streaming_sse(
     reasoning_parts: list[str] = []
     usage_obj: dict | None = None
     created_ts: int | None = None
+    # tool_calls collection: index -> {id, name, arguments_parts}
+    tool_calls_by_index: dict[int, dict] = {}
 
     async for item in sse_generator:
         if item is None:
@@ -929,6 +957,22 @@ async def collect_openai_chat_completion_from_streaming_sse(
             reasoning_content = delta.get("reasoning_content")
             if reasoning_content is not None:
                 reasoning_parts.append(str(reasoning_content))
+            tool_calls = delta.get("tool_calls")
+            if isinstance(tool_calls, list):
+                for tc in tool_calls:
+                    if not isinstance(tc, dict):
+                        continue
+                    idx = tc.get("index", 0)
+                    if idx not in tool_calls_by_index:
+                        tool_calls_by_index[idx] = {"id": None, "name": None, "arguments_parts": []}
+                    entry = tool_calls_by_index[idx]
+                    if tc.get("id"):
+                        entry["id"] = tc["id"]
+                    func = tc.get("function") or {}
+                    if func.get("name"):
+                        entry["name"] = func["name"]
+                    if func.get("arguments") is not None:
+                        entry["arguments_parts"].append(func["arguments"])
 
     prompt_tokens = int(safe_get(usage_obj, "prompt_tokens", default=0) or 0)
     completion_tokens = int(safe_get(usage_obj, "completion_tokens", default=0) or 0)
@@ -942,6 +986,20 @@ async def collect_openai_chat_completion_from_streaming_sse(
 
     content_text = "".join(content_parts)
     reasoning_text = "".join(reasoning_parts)
+
+    tool_calls_list = None
+    if tool_calls_by_index:
+        tool_calls_list = []
+        for idx in sorted(tool_calls_by_index.keys()):
+            entry = tool_calls_by_index[idx]
+            tool_calls_list.append({
+                "id": entry["id"] or f"call_{idx}",
+                "type": "function",
+                "function": {
+                    "name": entry["name"],
+                    "arguments": "".join(entry["arguments_parts"])
+                }
+            })
 
     timestamp = created_ts if created_ts is not None else int(time())
     return await generate_no_stream_response(
@@ -959,6 +1017,7 @@ async def collect_openai_chat_completion_from_streaming_sse(
         completion_audio_tokens=completion_audio_tokens,
         accepted_prediction_tokens=accepted_prediction_tokens,
         rejected_prediction_tokens=rejected_prediction_tokens,
+        tool_calls_list=tool_calls_list,
     )
 
 def _parse_gemini_audio_rate(mime_type: str) -> int | None:
