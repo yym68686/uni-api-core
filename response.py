@@ -240,18 +240,26 @@ async def gemini_json_poccess(response_json):
         elif inline_b64 and inline_mime.lower().startswith("audio/"):
             audio_b64_wav = gemini_audio_inline_data_to_wav_base64(inline_mime, inline_b64)
 
-    function_call_name = safe_get(json_data, "parts", 0, "functionCall", "name", default=None)
-    function_full_response = safe_get(json_data, "parts", 0, "functionCall", "args", default="")
-    function_full_response = await asyncio.to_thread(json.dumps, function_full_response) if function_full_response else None
-    if function_call_name:
-        thought_signature = safe_get(json_data, "parts", 0, "thoughtSignature", default=None)
+    # Scan all parts for functionCall (not just parts[0]),
+    # because thinking content may occupy parts[0] in Gemini 3 models.
+    function_call_name = None
+    function_full_response = None
+    fc_part = None
+    if isinstance(parts_list, list):
+        for part in parts_list:
+            fc_name = safe_get(part, "functionCall", "name", default=None)
+            if fc_name:
+                function_call_name = fc_name
+                fc_args = safe_get(part, "functionCall", "args", default="")
+                function_full_response = await asyncio.to_thread(json.dumps, fc_args) if fc_args else None
+                fc_part = part
+                break
+    if function_call_name and fc_part:
+        thought_signature = safe_get(fc_part, "thoughtSignature", default=None)
         if not thought_signature:
-            thought_signature = safe_get(json_data, "parts", 0, "thought_signature", default=None)
+            thought_signature = safe_get(fc_part, "thought_signature", default=None)
         if thought_signature:
             encoded = base64.urlsafe_b64encode(thought_signature.encode("utf-8")).decode("ascii").rstrip("=")
-            # Gemini's thoughtSignature is not guaranteed to be unique per tool call.
-            # Append a nonce to satisfy OpenAI tool_call.id uniqueness while still
-            # allowing us to recover thoughtSignature from the ID later.
             tools_id = f"call_{encoded}.{uuid.uuid4().hex}"
 
     blockReason = safe_get(json_data, 0, "promptFeedback", "blockReason", default=None)
