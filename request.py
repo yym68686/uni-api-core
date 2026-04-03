@@ -130,6 +130,15 @@ def _format_to_mime(format_value: str | None) -> str | None:
     }
     return mapping.get(fmt, f"audio/{fmt}")
 
+def _merge_post_body_override_dict(target: dict, override: dict, *, removal_key: str = "__remove__") -> None:
+    for key, value in override.items():
+        if key == removal_key:
+            continue
+        current = target.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            _merge_post_body_override_dict(current, value, removal_key=removal_key)
+        else:
+            target[key] = copy.deepcopy(value)
 
 def apply_post_body_parameter_overrides(
     payload: dict,
@@ -169,7 +178,11 @@ def apply_post_body_parameter_overrides(
         for key, value in model_overrides.items():
             if key in skipped or key == removal_key:
                 continue
-            payload[key] = value
+            current = payload.get(key)
+            if isinstance(current, dict) and isinstance(value, dict):
+                _merge_post_body_override_dict(current, value, removal_key=removal_key)
+            else:
+                payload[key] = copy.deepcopy(value)
         for key in normalize_removals(model_overrides.get(removal_key)):
             if key in skipped:
                 continue
@@ -178,7 +191,11 @@ def apply_post_body_parameter_overrides(
     for key, value in overrides.items():
         if key in model_dict or key in skipped or key == removal_key:
             continue
-        payload[key] = value
+        current = payload.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            _merge_post_body_override_dict(current, value, removal_key=removal_key)
+        else:
+            payload[key] = copy.deepcopy(value)
 
     for key in normalize_removals(overrides.get(removal_key)):
         if key in skipped:
@@ -223,10 +240,33 @@ def _gemini_2_5_thinking_budget_from_request_model(request_model: str, original_
         return 24576
     return val if val >= 0 else 0
 
+def _is_gemini_3_model_name(model_name: str | None) -> bool:
+    if not model_name:
+        return False
+    name = str(model_name).strip().lower()
+    if not name:
+        return False
+    if re.match(r"^gemini-3(?:\.\d+)?-", name):
+        return True
+    return name.startswith("gemini-flash-latest") or name.startswith("gemini-flash-lite-latest")
+
+def _is_gemini_3_pro_model_name(model_name: str | None) -> bool:
+    if not model_name:
+        return False
+    name = str(model_name).strip().lower()
+    return bool(re.match(r"^gemini-3(?:\.\d+)?-pro", name))
+
+def _is_gemini_3_model(request_model: str, original_model: str) -> bool:
+    return _is_gemini_3_model_name(request_model) or _is_gemini_3_model_name(original_model)
+
+def _is_gemini_3_pro_model(request_model: str, original_model: str) -> bool:
+    return _is_gemini_3_pro_model_name(request_model) or _is_gemini_3_pro_model_name(original_model)
+
 def _gemini_3_thinking_level_from_request(request: RequestModel, original_model: str) -> str | None:
+    is_gemini_3_pro = _is_gemini_3_pro_model(request.model, original_model)
     reasoning_effort = _request_reasoning_effort(request)
     if reasoning_effort:
-        if "gemini-3-pro" in original_model:
+        if is_gemini_3_pro:
             if reasoning_effort == "high":
                 return "high"
             if reasoning_effort in {"minimal", "low", "medium"}:
@@ -238,7 +278,7 @@ def _gemini_3_thinking_level_from_request(request: RequestModel, original_model:
     if match:
         try:
             val = int(match.group(1))
-            if "gemini-3-pro" in original_model:
+            if is_gemini_3_pro:
                 if val <= 32768 * 0.4:
                     return "low"
                 return "high"
@@ -257,7 +297,7 @@ def _gemini_3_thinking_level_from_request(request: RequestModel, original_model:
         return None
 
     level_str = level_match.group(1)
-    if "gemini-3-pro" in original_model:
+    if is_gemini_3_pro:
         if level_str in {"minimal", "low", "medium"}:
             return "low"
         return "high"
@@ -276,7 +316,7 @@ def _apply_explicit_gemini_request_controls(payload: dict, request: RequestModel
             thinking_config["includeThoughts"] = bool(budget)
             thinking_config["thinkingBudget"] = budget
 
-    if "gemini-3" in original_model:
+    if _is_gemini_3_model(request.model, original_model):
         thinking_level = _gemini_3_thinking_level_from_request(request, original_model)
         if thinking_level:
             thinking_config = generation_config.get("thinkingConfig")
@@ -591,7 +631,7 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 }
 
     # Gemini 3 系列的 thinkingLevel 处理
-    if "gemini-3" in original_model:
+    if _is_gemini_3_model(request.model, original_model):
         thinking_level = _gemini_3_thinking_level_from_request(request, original_model)
         if thinking_level:
             if "thinkingConfig" not in payload["generationConfig"]:
@@ -896,7 +936,7 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                 }
 
     # Gemini 3 系列的 thinkingLevel 处理
-    if "gemini-3" in original_model:
+    if _is_gemini_3_model(request.model, original_model):
         thinking_level = _gemini_3_thinking_level_from_request(request, original_model)
         if thinking_level:
             if "thinkingConfig" not in payload["generationConfig"]:
