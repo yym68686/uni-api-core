@@ -303,7 +303,29 @@ def _gemini_3_thinking_level_from_request(request: RequestModel, original_model:
         return "high"
     return level_str
 
-def _apply_explicit_gemini_request_controls(payload: dict, request: RequestModel, original_model: str) -> None:
+def _gemini_service_tier_from_request(request: RequestModel) -> str | None:
+    service_tier = getattr(request, "service_tier", None)
+    if service_tier is None:
+        return None
+    service_tier = str(service_tier).strip()
+    if not service_tier:
+        return None
+    normalized = service_tier.lower()
+    tier_map = {
+        "default": "STANDARD",
+        "standard": "STANDARD",
+        "priority": "PRIORITY",
+        "flex": "FLEX",
+    }
+    return tier_map.get(normalized, service_tier.upper())
+
+def _apply_explicit_gemini_request_controls(
+    payload: dict,
+    request: RequestModel,
+    original_model: str,
+    *,
+    include_service_tier: bool = False,
+) -> None:
     generation_config = payload.setdefault("generationConfig", {})
 
     if "gemini-2.5" in original_model and "-image" not in original_model and "preview-tts" not in original_model.lower():
@@ -324,6 +346,12 @@ def _apply_explicit_gemini_request_controls(payload: dict, request: RequestModel
                 thinking_config = {}
                 generation_config["thinkingConfig"] = thinking_config
             thinking_config["thinkingLevel"] = thinking_level
+
+    if include_service_tier:
+        service_tier = _gemini_service_tier_from_request(request)
+        if service_tier:
+            payload.pop("service_tier", None)
+            payload["serviceTier"] = service_tier
 
 def _build_gemini_input_audio_part(item):
     input_audio = getattr(item, "input_audio", None)
@@ -639,7 +667,12 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             payload["generationConfig"]["thinkingConfig"]["thinkingLevel"] = thinking_level
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
-    _apply_explicit_gemini_request_controls(payload, request, original_model)
+    _apply_explicit_gemini_request_controls(
+        payload,
+        request,
+        original_model,
+        include_service_tier=True,
+    )
 
     return url, headers, payload
 
@@ -1532,10 +1565,12 @@ def _codex_responses_url(base_url: str) -> str:
         return base
     return f"{base}/responses"
 
-def strip_unsupported_codex_payload_fields(payload: dict) -> dict:
+def strip_unsupported_codex_payload_fields(payload: dict, *, strip_store: bool = False) -> dict:
     # Codex rejects these fields; drop them on any Codex-bound request.
     payload.pop("max_output_tokens", None)
     payload.pop("response_format", None)
+    if strip_store:
+        payload.pop("store", None)
     return payload
 
 def _codex_chat_messages_to_responses_input(request: RequestModel, provider: dict) -> list[dict]:

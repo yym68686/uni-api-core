@@ -125,6 +125,7 @@ class RequestModel(BaseRequest):
     response_format: Optional[ResponseFormat] = None
     thinking: Optional[Thinking] = None
     reasoning: Optional[Reasoning] = Field(default=None, exclude=True)
+    service_tier: Optional[str] = Field(default=None, exclude=True)
     stream_options: Optional[StreamOptions] = None
     chat_template_kwargs: Optional[Dict[str, Any]] = None
 
