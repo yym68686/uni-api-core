@@ -1398,7 +1398,7 @@ def _handle_qwen3_thinking_mode(payload: dict, original_model: str) -> None:
     # mode.  Default to thinking OFF so standard tool_choice values work; if
     # the caller explicitly sets enable_thinking=True, keep thinking ON but
     # downgrade any incompatible tool_choice to 'auto'.
-    if "qwen3" not in original_model.lower():
+    if "qwen" not in original_model.lower():
         return
     if payload.get("enable_thinking") is True:
         tool_choice = payload.get("tool_choice")
