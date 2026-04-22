@@ -124,6 +124,7 @@ class RequestModel(BaseRequest):
     tools: Optional[List[Tool]] = None
     response_format: Optional[ResponseFormat] = None
     thinking: Optional[Thinking] = None
+    enable_thinking: Optional[bool] = None
     reasoning: Optional[Reasoning] = Field(default=None, exclude=True)
     service_tier: Optional[str] = Field(default=None, exclude=True)
     stream_options: Optional[StreamOptions] = None

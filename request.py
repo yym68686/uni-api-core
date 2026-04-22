@@ -1392,16 +1392,20 @@ async def get_aws_payload(request, engine, provider, api_key=None):
 
     return url, headers, payload
 
-def _fix_qwen3_thinking_tool_choice(payload: dict, original_model: str) -> None:
-    # Qwen3+ models enable thinking by default; the Alibaba API rejects
-    # tool_choice='required' or a specific function object in that mode.
+def _handle_qwen3_thinking_mode(payload: dict, original_model: str) -> None:
+    # Qwen3+ models (e.g. qwen3.5-plus) enable thinking by default, but the
+    # Alibaba API rejects tool_choice='required' or a function object in that
+    # mode.  Default to thinking OFF so standard tool_choice values work; if
+    # the caller explicitly sets enable_thinking=True, keep thinking ON but
+    # downgrade any incompatible tool_choice to 'auto'.
     if "qwen3" not in original_model.lower():
         return
-    if payload.get("enable_thinking") is False:
-        return
-    tool_choice = payload.get("tool_choice")
-    if tool_choice == "required" or isinstance(tool_choice, dict):
-        payload["tool_choice"] = "auto"
+    if payload.get("enable_thinking") is True:
+        tool_choice = payload.get("tool_choice")
+        if tool_choice == "required" or isinstance(tool_choice, dict):
+            payload["tool_choice"] = "auto"
+    else:
+        payload["enable_thinking"] = False
 
 async def get_gpt_payload(request, engine, provider, api_key=None):
     headers = {
@@ -1563,7 +1567,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
                 })
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
-    _fix_qwen3_thinking_tool_choice(payload, original_model)
+    _handle_qwen3_thinking_mode(payload, original_model)
 
     return url, headers, payload
 
@@ -2062,7 +2066,7 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
             payload[field] = value
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
-    _fix_qwen3_thinking_tool_choice(payload, original_model)
+    _handle_qwen3_thinking_mode(payload, original_model)
 
     return url, headers, payload
 
