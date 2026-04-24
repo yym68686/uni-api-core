@@ -1763,7 +1763,7 @@ async def get_codex_payload(request, engine, provider, api_key=None):
     session_id = str(uuid.uuid4())
     headers.setdefault("Session_id", session_id)
     headers.setdefault("Conversation_id", session_id)
-    headers.setdefault("User-Agent", "codex_cli_rs/0.50.0")
+    headers.setdefault("User-Agent", "codex_cli_rs/0.125.0")
     headers.setdefault("Connection", "Keep-Alive")
     headers.setdefault("Accept", "text/event-stream" if request.stream else "application/json")
 
