@@ -989,15 +989,39 @@ async def collect_openai_chat_completion_from_streaming_sse(
                     if func.get("arguments") is not None:
                         entry["arguments_parts"].append(func["arguments"])
 
-    prompt_tokens = int(safe_get(usage_obj, "prompt_tokens", default=0) or 0)
-    completion_tokens = int(safe_get(usage_obj, "completion_tokens", default=0) or 0)
+    prompt_tokens = safe_get(usage_obj, "prompt_tokens", default=None)
+    if prompt_tokens is None:
+        prompt_tokens = safe_get(usage_obj, "input_tokens", default=0)
+    completion_tokens = safe_get(usage_obj, "completion_tokens", default=None)
+    if completion_tokens is None:
+        completion_tokens = safe_get(usage_obj, "output_tokens", default=0)
+    prompt_tokens = int(prompt_tokens or 0)
+    completion_tokens = int(completion_tokens or 0)
     total_tokens = int(safe_get(usage_obj, "total_tokens", default=0) or 0)
-    cached_tokens = int(safe_get(usage_obj, "prompt_tokens_details", "cached_tokens", default=0) or 0)
-    prompt_audio_tokens = int(safe_get(usage_obj, "prompt_tokens_details", "audio_tokens", default=0) or 0)
-    reasoning_tokens = int(safe_get(usage_obj, "completion_tokens_details", "reasoning_tokens", default=0) or 0)
-    completion_audio_tokens = int(safe_get(usage_obj, "completion_tokens_details", "audio_tokens", default=0) or 0)
-    accepted_prediction_tokens = int(safe_get(usage_obj, "completion_tokens_details", "accepted_prediction_tokens", default=0) or 0)
-    rejected_prediction_tokens = int(safe_get(usage_obj, "completion_tokens_details", "rejected_prediction_tokens", default=0) or 0)
+    cached_tokens = safe_get(usage_obj, "prompt_tokens_details", "cached_tokens", default=None)
+    if cached_tokens is None:
+        cached_tokens = safe_get(usage_obj, "input_tokens_details", "cached_tokens", default=0)
+    prompt_audio_tokens = safe_get(usage_obj, "prompt_tokens_details", "audio_tokens", default=None)
+    if prompt_audio_tokens is None:
+        prompt_audio_tokens = safe_get(usage_obj, "input_tokens_details", "audio_tokens", default=0)
+    reasoning_tokens = safe_get(usage_obj, "completion_tokens_details", "reasoning_tokens", default=None)
+    if reasoning_tokens is None:
+        reasoning_tokens = safe_get(usage_obj, "output_tokens_details", "reasoning_tokens", default=0)
+    completion_audio_tokens = safe_get(usage_obj, "completion_tokens_details", "audio_tokens", default=None)
+    if completion_audio_tokens is None:
+        completion_audio_tokens = safe_get(usage_obj, "output_tokens_details", "audio_tokens", default=0)
+    accepted_prediction_tokens = safe_get(usage_obj, "completion_tokens_details", "accepted_prediction_tokens", default=None)
+    if accepted_prediction_tokens is None:
+        accepted_prediction_tokens = safe_get(usage_obj, "output_tokens_details", "accepted_prediction_tokens", default=0)
+    rejected_prediction_tokens = safe_get(usage_obj, "completion_tokens_details", "rejected_prediction_tokens", default=None)
+    if rejected_prediction_tokens is None:
+        rejected_prediction_tokens = safe_get(usage_obj, "output_tokens_details", "rejected_prediction_tokens", default=0)
+    cached_tokens = int(cached_tokens or 0)
+    prompt_audio_tokens = int(prompt_audio_tokens or 0)
+    reasoning_tokens = int(reasoning_tokens or 0)
+    completion_audio_tokens = int(completion_audio_tokens or 0)
+    accepted_prediction_tokens = int(accepted_prediction_tokens or 0)
+    rejected_prediction_tokens = int(rejected_prediction_tokens or 0)
 
     content_text = "".join(content_parts)
     reasoning_text = "".join(reasoning_parts)

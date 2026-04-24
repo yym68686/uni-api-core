@@ -13,6 +13,7 @@ from .log_config import logger
 
 from .utils import (
     safe_get,
+    _build_openai_usage,
     generate_sse_response,
     generate_no_stream_response,
     end_of_line,
@@ -383,6 +384,83 @@ def _build_chat_completion_chunk_sse(
     return "data: " + json.dumps(payload, ensure_ascii=False) + end_of_line
 
 
+def _responses_usage_to_chat_completion_usage(usage_obj: object) -> dict | None:
+    if not isinstance(usage_obj, dict):
+        return None
+    if all(
+        usage_obj.get(key) is None
+        for key in ("prompt_tokens", "input_tokens", "completion_tokens", "output_tokens", "total_tokens")
+    ):
+        return None
+
+    prompt_tokens = usage_obj.get("prompt_tokens")
+    if prompt_tokens is None:
+        prompt_tokens = usage_obj.get("input_tokens")
+
+    completion_tokens = usage_obj.get("completion_tokens")
+    if completion_tokens is None:
+        completion_tokens = usage_obj.get("output_tokens")
+
+    total_tokens = usage_obj.get("total_tokens")
+    if total_tokens is None:
+        try:
+            total_tokens = int(prompt_tokens or 0) + int(completion_tokens or 0)
+        except Exception:
+            total_tokens = 0
+
+    prompt_details = usage_obj.get("prompt_tokens_details")
+    if not isinstance(prompt_details, dict):
+        prompt_details = usage_obj.get("input_tokens_details")
+    if not isinstance(prompt_details, dict):
+        prompt_details = {}
+
+    completion_details = usage_obj.get("completion_tokens_details")
+    if not isinstance(completion_details, dict):
+        completion_details = usage_obj.get("output_tokens_details")
+    if not isinstance(completion_details, dict):
+        completion_details = {}
+
+    return _build_openai_usage(
+        prompt_tokens=prompt_tokens or 0,
+        completion_tokens=completion_tokens or 0,
+        total_tokens=total_tokens or 0,
+        cached_tokens=prompt_details.get("cached_tokens", 0) or 0,
+        prompt_audio_tokens=prompt_details.get("audio_tokens", 0) or 0,
+        reasoning_tokens=completion_details.get("reasoning_tokens", 0) or 0,
+        completion_audio_tokens=completion_details.get("audio_tokens", 0) or 0,
+        accepted_prediction_tokens=completion_details.get("accepted_prediction_tokens", 0) or 0,
+        rejected_prediction_tokens=completion_details.get("rejected_prediction_tokens", 0) or 0,
+    )
+
+
+def _chat_completion_usage_from_responses_payload(payload: object) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+
+    usage_obj = safe_get(payload, "response", "usage", default=None)
+    if usage_obj is None:
+        usage_obj = payload.get("usage")
+    return _responses_usage_to_chat_completion_usage(usage_obj)
+
+
+def _build_chat_completion_usage_chunk_sse(
+    *,
+    response_id: str,
+    created_at: int,
+    model_name: str,
+    usage: dict,
+) -> str:
+    payload = {
+        "id": response_id,
+        "object": "chat.completion.chunk",
+        "created": created_at,
+        "model": model_name,
+        "choices": [],
+        "usage": usage,
+    }
+    return "data: " + json.dumps(payload, ensure_ascii=False) + end_of_line
+
+
 def _collect_responses_output_item_done(
     event_payload: object,
     *,
@@ -560,6 +638,14 @@ async def _stream_responses_to_chat_completions(
             delta={},
             finish_reason=finish_reason,
         )
+        usage = _chat_completion_usage_from_responses_payload(patched_payload)
+        if usage is not None:
+            yield _build_chat_completion_usage_chunk_sse(
+                response_id=response_id,
+                created_at=created_at,
+                model_name=model_name,
+                usage=usage,
+            )
         yield "data: [DONE]" + end_of_line
 
     async for chunk in text_iterator:
@@ -1413,10 +1499,10 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         response_bytes = await response.aread()
         response_json = await asyncio.to_thread(json.loads, response_bytes)
 
-        usage_obj = safe_get(response_json, "usage", default={}) or {}
-        prompt_tokens = usage_obj.get("input_tokens") or usage_obj.get("prompt_tokens") or 0
-        completion_tokens = usage_obj.get("output_tokens") or usage_obj.get("completion_tokens") or 0
-        total_tokens = usage_obj.get("total_tokens") or (prompt_tokens + completion_tokens)
+        usage = _responses_usage_to_chat_completion_usage(safe_get(response_json, "usage", default=None))
+        prompt_tokens = safe_get(usage, "prompt_tokens", default=0) or 0
+        completion_tokens = safe_get(usage, "completion_tokens", default=0) or 0
+        total_tokens = safe_get(usage, "total_tokens", default=0) or 0
 
         content, reasoning_content = _responses_output_to_text(response_json)
         timestamp = safe_get(response_json, "created", default=int(datetime.timestamp(datetime.now())))
@@ -1430,6 +1516,12 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             reasoning_content=reasoning_content or None,
+            cached_tokens=safe_get(usage, "prompt_tokens_details", "cached_tokens", default=0) or 0,
+            prompt_audio_tokens=safe_get(usage, "prompt_tokens_details", "audio_tokens", default=0) or 0,
+            reasoning_tokens=safe_get(usage, "completion_tokens_details", "reasoning_tokens", default=0) or 0,
+            completion_audio_tokens=safe_get(usage, "completion_tokens_details", "audio_tokens", default=0) or 0,
+            accepted_prediction_tokens=safe_get(usage, "completion_tokens_details", "accepted_prediction_tokens", default=0) or 0,
+            rejected_prediction_tokens=safe_get(usage, "completion_tokens_details", "rejected_prediction_tokens", default=0) or 0,
         )
 
     elif engine == "gemini" or engine == "vertex-gemini" or engine == "aws":
