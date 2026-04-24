@@ -1589,6 +1589,14 @@ def strip_unsupported_codex_payload_fields(payload: dict, *, strip_store: bool =
         payload.pop("store", None)
     return payload
 
+def strip_codex_image_generation_defaults(payload: dict, model: str) -> dict:
+    # gpt-image-2 accepts Responses payloads, but not the Codex chat defaults.
+    if model == "gpt-image-2":
+        payload.pop("parallel_tool_calls", None)
+        payload.pop("reasoning", None)
+        payload.pop("include", None)
+    return payload
+
 def _codex_chat_messages_to_responses_input(request: RequestModel, provider: dict) -> list[dict]:
     input_items: list[dict] = []
 
@@ -1761,6 +1769,7 @@ async def get_codex_payload(request, engine, provider, api_key=None):
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
 
+    strip_codex_image_generation_defaults(payload, original_model)
     strip_unsupported_codex_payload_fields(payload)
     return url, headers, payload
 

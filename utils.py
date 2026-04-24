@@ -102,12 +102,27 @@ class BaseAPI:
         # print("parsed_url", parsed_url)
         if parsed_url.scheme == "":
             raise Exception("Error: API_URL is not set")
-        if parsed_url.path != '/':
-            before_v1 = parsed_url.path.split("chat/completions")[0]
-            if not before_v1.endswith("/"):
+        normalized_path = parsed_url.path.rstrip("/") or "/"
+        known_endpoint_suffixes = (
+            "/chat/completions",
+            "/images/generations",
+            "/audio/transcriptions",
+            "/moderations",
+            "/embeddings",
+            "/audio/speech",
+            "/responses/compact",
+            "/responses",
+            "/messages",
+        )
+        before_v1 = ""
+        if normalized_path != "/":
+            before_v1 = normalized_path
+            for suffix in known_endpoint_suffixes:
+                if normalized_path.endswith(suffix):
+                    before_v1 = normalized_path[:-len(suffix)]
+                    break
+            if before_v1:
                 before_v1 = before_v1 + "/"
-        else:
-            before_v1 = ""
         self.base_url: str = urlunparse(parsed_url[:2] + ("",) + ("",) * 3)
         self.v1_url: str = urlunparse(parsed_url[:2]+ (before_v1,) + ("",) * 3)
         if "v1/messages" in parsed_url.path:
