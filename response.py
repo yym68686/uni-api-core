@@ -1,4 +1,5 @@
 import re
+import copy
 import json
 import random
 import string
@@ -136,6 +137,14 @@ def _responses_output_to_text(response_json: dict) -> tuple[str, str]:
             if item_type in ("output_text", "text") and item.get("text"):
                 content_parts.append(str(item.get("text")))
                 continue
+            if item_type == "image_generation_call":
+                result_b64 = item.get("result")
+                if isinstance(result_b64, str) and result_b64:
+                    mime_type = _mime_type_from_output_format(
+                        _normalize_optional_text(item.get("output_format"))
+                    )
+                    content_parts.append(f"![image](data:{mime_type};base64,{result_b64})")
+                continue
             if item_type in ("reasoning_summary_text", "reasoning_text") and item.get("text"):
                 reasoning_parts.append(str(item.get("text")))
                 continue
@@ -170,6 +179,474 @@ def _is_responses_api_call(url: str, payload: dict) -> bool:
     if isinstance(payload, dict) and "input" in payload and "messages" not in payload:
         return True
     return False
+
+
+def _normalize_optional_text(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _coerce_positive_int(value: object) -> int | None:
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized if normalized > 0 else None
+
+
+def _mime_type_from_output_format(output_format: str | None) -> str:
+    normalized = (_normalize_optional_text(output_format) or "png").lower()
+    if normalized in {"jpg", "jpeg"}:
+        return "image/jpeg"
+    if normalized == "webp":
+        return "image/webp"
+    if normalized == "gif":
+        return "image/gif"
+    return "image/png"
+
+
+def _is_sse_comment_frame(raw_event: str) -> bool:
+    has_line = False
+    for line in raw_event.splitlines():
+        if not line:
+            continue
+        has_line = True
+        if not line.startswith(":"):
+            return False
+    return has_line
+
+
+def _extract_responses_stream_sse_event(raw_event: str) -> tuple[str, object]:
+    event_name = ""
+    data_lines: list[str] = []
+    for line in raw_event.splitlines():
+        if line.startswith("event:"):
+            event_name = line[6:].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].strip())
+
+    data_str = "\n".join(data_lines).strip()
+    if data_str == "[DONE]":
+        return "[DONE]", "[DONE]"
+
+    parsed_payload: object = data_str
+    if data_str:
+        try:
+            parsed_payload = json.loads(data_str)
+        except Exception:
+            parsed_payload = data_str
+
+    if not event_name and isinstance(parsed_payload, dict):
+        event_name = str(parsed_payload.get("type") or "").strip()
+
+    return event_name, parsed_payload
+
+
+def _extract_response_model_name(payload: object) -> str | None:
+    for candidate in (
+        safe_get(payload, "model_name", default=None),
+        safe_get(payload, "model", default=None),
+        safe_get(payload, "response", "model_name", default=None),
+        safe_get(payload, "response", "model", default=None),
+    ):
+        normalized = _normalize_optional_text(candidate)
+        if normalized is not None:
+            return normalized
+    return None
+
+
+def _chat_completion_response_id_from_payload(payload: object, fallback: str) -> str:
+    for candidate in (
+        safe_get(payload, "id", default=None),
+        safe_get(payload, "response", "id", default=None),
+    ):
+        normalized = _normalize_optional_text(candidate)
+        if normalized is not None:
+            return normalized
+    return fallback
+
+
+def _chat_completion_created_at_from_payload(payload: object, fallback: int) -> int:
+    for candidate in (
+        safe_get(payload, "created", default=None),
+        safe_get(payload, "created_at", default=None),
+        safe_get(payload, "response", "created_at", default=None),
+        safe_get(payload, "response", "created", default=None),
+    ):
+        normalized = _coerce_positive_int(candidate)
+        if normalized is not None:
+            return normalized
+    return fallback
+
+
+def _chat_completion_tool_calls_from_responses_output(output_items: object) -> list[dict]:
+    if not isinstance(output_items, list):
+        return []
+
+    tool_calls: list[dict] = []
+    for item in output_items:
+        if not isinstance(item, dict):
+            continue
+        if _normalize_optional_text(item.get("type")) != "function_call":
+            continue
+
+        name = _normalize_optional_text(item.get("name"))
+        if name is None:
+            continue
+
+        tool_calls.append(
+            {
+                "id": _normalize_optional_text(item.get("call_id")) or f"call_{uuid.uuid4().hex}",
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": str(item.get("arguments") or ""),
+                },
+            }
+        )
+
+    return tool_calls
+
+
+def _chat_completion_message_from_responses_payload(payload: dict) -> tuple[dict, str]:
+    output_items = safe_get(payload, "output", default=None)
+    if not isinstance(output_items, list):
+        output_items = safe_get(payload, "response", "output", default=[])
+
+    message_parts: list[str] = []
+    if isinstance(output_items, list):
+        for item in output_items:
+            if not isinstance(item, dict):
+                continue
+
+            item_type = _normalize_optional_text(item.get("type"))
+            if item_type == "message":
+                content_items = item.get("content")
+                if not isinstance(content_items, list):
+                    continue
+                text_parts: list[str] = []
+                for content_item in content_items:
+                    if not isinstance(content_item, dict):
+                        continue
+                    content_type = _normalize_optional_text(content_item.get("type"))
+                    if content_type in {"output_text", "input_text", "text"} and content_item.get("text") is not None:
+                        text_parts.append(str(content_item.get("text")))
+                if text_parts:
+                    message_parts.append("".join(text_parts))
+                continue
+
+            if item_type == "image_generation_call":
+                result_b64 = item.get("result")
+                if not isinstance(result_b64, str) or not result_b64:
+                    continue
+                mime_type = _mime_type_from_output_format(
+                    _normalize_optional_text(item.get("output_format"))
+                )
+                message_parts.append(f"![image](data:{mime_type};base64,{result_b64})")
+
+    content = "\n\n".join(part for part in message_parts if part)
+    tool_calls = _chat_completion_tool_calls_from_responses_output(output_items)
+
+    message: dict[str, object] = {
+        "role": "assistant",
+        "content": content or None,
+    }
+    if tool_calls:
+        message["tool_calls"] = tool_calls
+        if not content:
+            message["content"] = None
+        return message, "tool_calls"
+    return message, "stop"
+
+
+def _build_chat_completion_chunk_sse(
+    *,
+    response_id: str,
+    created_at: int,
+    model_name: str,
+    delta: dict,
+    finish_reason: str | None = None,
+) -> str:
+    payload = {
+        "id": response_id,
+        "object": "chat.completion.chunk",
+        "created": created_at,
+        "model": model_name,
+        "choices": [
+            {
+                "index": 0,
+                "delta": delta,
+                "finish_reason": finish_reason,
+            }
+        ],
+    }
+    return "data: " + json.dumps(payload, ensure_ascii=False) + end_of_line
+
+
+def _collect_responses_output_item_done(
+    event_payload: object,
+    *,
+    output_items_by_index: dict[int, dict],
+    output_items_fallback: list[dict],
+) -> None:
+    if not isinstance(event_payload, dict):
+        return
+
+    item = event_payload.get("item")
+    if not isinstance(item, dict):
+        return
+
+    output_index = _coerce_positive_int(event_payload.get("output_index"))
+    item_copy = copy.deepcopy(item)
+    if output_index is None and event_payload.get("output_index") not in (0, "0"):
+        output_items_fallback.append(item_copy)
+        return
+    if output_index is None:
+        output_index = 0
+    output_items_by_index[output_index] = item_copy
+
+
+def _patch_responses_completed_output(
+    payload: object,
+    *,
+    output_items_by_index: dict[int, dict],
+    output_items_fallback: list[dict],
+) -> object:
+    if not isinstance(payload, dict):
+        return payload
+
+    response_payload = payload.get("response")
+    if not isinstance(response_payload, dict):
+        return payload
+
+    output_items = response_payload.get("output")
+    should_patch_output = (
+        (not isinstance(output_items, list) or not output_items)
+        and (output_items_by_index or output_items_fallback)
+    )
+    if not should_patch_output:
+        return payload
+
+    patched_payload = copy.deepcopy(payload)
+    patched_response = patched_payload.get("response")
+    if not isinstance(patched_response, dict):
+        return patched_payload
+
+    patched_output = [
+        copy.deepcopy(output_items_by_index[index])
+        for index in sorted(output_items_by_index)
+    ]
+    patched_output.extend(copy.deepcopy(item) for item in output_items_fallback)
+    patched_response["output"] = patched_output
+    return patched_payload
+
+
+def _build_synthetic_responses_completed_payload(
+    *,
+    response_id: str,
+    model_name: str,
+    created_at: int,
+    output_items_by_index: dict[int, dict],
+    output_items_fallback: list[dict],
+) -> dict | None:
+    if not output_items_by_index and not output_items_fallback:
+        return None
+
+    payload = {
+        "type": "response.completed",
+        "response": {
+            "id": response_id,
+            "model": model_name,
+            "created_at": created_at,
+            "status": "completed",
+        },
+    }
+    patched_payload = _patch_responses_completed_output(
+        payload,
+        output_items_by_index=output_items_by_index,
+        output_items_fallback=output_items_fallback,
+    )
+    output_items = safe_get(patched_payload, "response", "output", default=None)
+    if not isinstance(output_items, list) or not output_items:
+        return None
+    return patched_payload
+
+
+async def _stream_responses_to_chat_completions(
+    text_iterator,
+    *,
+    request_model: str,
+):
+    text_buffer = ""
+    emitted_content = ""
+    role_sent = False
+    response_id = f"chatcmpl_{uuid.uuid4().hex}"
+    created_at = int(datetime.timestamp(datetime.now()))
+    model_name = request_model
+    completed_response_seen = False
+    error_seen = False
+    output_items_by_index: dict[int, dict] = {}
+    output_items_fallback: list[dict] = []
+
+    async def emit_content_delta(content: str):
+        nonlocal role_sent, emitted_content
+        if not content:
+            return
+        delta = {"content": content}
+        if not role_sent:
+            delta["role"] = "assistant"
+            role_sent = True
+        emitted_content += content
+        yield _build_chat_completion_chunk_sse(
+            response_id=response_id,
+            created_at=created_at,
+            model_name=model_name,
+            delta=delta,
+        )
+
+    async def emit_completed_payload(event_payload: dict):
+        nonlocal completed_response_seen, role_sent, response_id, created_at, model_name
+        completed_response_seen = True
+
+        patched_payload = _patch_responses_completed_output(
+            event_payload,
+            output_items_by_index=output_items_by_index,
+            output_items_fallback=output_items_fallback,
+        )
+        response_id = _chat_completion_response_id_from_payload(patched_payload, response_id)
+        created_at = _chat_completion_created_at_from_payload(patched_payload, created_at)
+        model_name = _extract_response_model_name(patched_payload) or model_name
+
+        message, finish_reason = _chat_completion_message_from_responses_payload(patched_payload)
+        final_content = str(message.get("content") or "")
+        if final_content:
+            suffix = final_content
+            if emitted_content and final_content.startswith(emitted_content):
+                suffix = final_content[len(emitted_content):]
+            async for content_chunk in emit_content_delta(suffix):
+                yield content_chunk
+
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list) and tool_calls:
+            tool_call_deltas = []
+            for index, tool_call in enumerate(tool_calls):
+                tool_call_delta = copy.deepcopy(tool_call)
+                tool_call_delta["index"] = index
+                tool_call_deltas.append(tool_call_delta)
+            delta = {"tool_calls": tool_call_deltas}
+            if not role_sent:
+                delta["role"] = "assistant"
+                role_sent = True
+            yield _build_chat_completion_chunk_sse(
+                response_id=response_id,
+                created_at=created_at,
+                model_name=model_name,
+                delta=delta,
+            )
+
+        if not role_sent:
+            yield _build_chat_completion_chunk_sse(
+                response_id=response_id,
+                created_at=created_at,
+                model_name=model_name,
+                delta={"role": "assistant"},
+            )
+            role_sent = True
+
+        yield _build_chat_completion_chunk_sse(
+            response_id=response_id,
+            created_at=created_at,
+            model_name=model_name,
+            delta={},
+            finish_reason=finish_reason,
+        )
+        yield "data: [DONE]" + end_of_line
+
+    async for chunk in text_iterator:
+        text_buffer += chunk
+        while True:
+            match = re.search(r"\r?\n\r?\n", text_buffer)
+            if not match:
+                break
+
+            raw_event = text_buffer[:match.start()]
+            text_buffer = text_buffer[match.end():]
+            if not raw_event.strip():
+                continue
+
+            if _is_sse_comment_frame(raw_event):
+                yield raw_event + end_of_line
+                continue
+
+            event_type, event_payload = _extract_responses_stream_sse_event(raw_event)
+            if event_type == "[DONE]":
+                synthetic_completed_payload = None
+                if not completed_response_seen and not error_seen:
+                    synthetic_completed_payload = _build_synthetic_responses_completed_payload(
+                        response_id=response_id,
+                        model_name=model_name,
+                        created_at=created_at,
+                        output_items_by_index=output_items_by_index,
+                        output_items_fallback=output_items_fallback,
+                    )
+                if synthetic_completed_payload is not None:
+                    async for completed_chunk in emit_completed_payload(synthetic_completed_payload):
+                        yield completed_chunk
+                    return
+                yield "data: [DONE]" + end_of_line
+                return
+
+            if event_type == "error":
+                error_seen = True
+                if isinstance(event_payload, dict):
+                    yield "data: " + json.dumps(event_payload, ensure_ascii=False) + end_of_line
+                else:
+                    yield raw_event + end_of_line
+                continue
+
+            if event_type == "keepalive":
+                continue
+
+            if isinstance(event_payload, dict):
+                response_id = _chat_completion_response_id_from_payload(event_payload, response_id)
+                created_at = _chat_completion_created_at_from_payload(event_payload, created_at)
+                model_name = _extract_response_model_name(event_payload) or model_name
+
+            if event_type == "response.output_item.done":
+                _collect_responses_output_item_done(
+                    event_payload,
+                    output_items_by_index=output_items_by_index,
+                    output_items_fallback=output_items_fallback,
+                )
+                continue
+
+            if event_type == "response.output_text.delta" and isinstance(event_payload, dict):
+                delta_text = str(event_payload.get("delta") or "")
+                async for content_chunk in emit_content_delta(delta_text):
+                    yield content_chunk
+                continue
+
+            if event_type != "response.completed" or not isinstance(event_payload, dict):
+                continue
+
+            async for completed_chunk in emit_completed_payload(event_payload):
+                yield completed_chunk
+            return
+
+    synthetic_completed_payload = None
+    if not completed_response_seen and not error_seen:
+        synthetic_completed_payload = _build_synthetic_responses_completed_payload(
+            response_id=response_id,
+            model_name=model_name,
+            created_at=created_at,
+            output_items_by_index=output_items_by_index,
+            output_items_fallback=output_items_fallback,
+        )
+    if synthetic_completed_payload is not None:
+        async for completed_chunk in emit_completed_payload(synthetic_completed_payload):
+            yield completed_chunk
+        return
+    yield "data: [DONE]" + end_of_line
 
 async def check_response(response, error_log):
     if response and not (200 <= response.status_code < 300):
@@ -509,6 +986,14 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
         error_message = await check_response(response, "fetch_gpt_response_stream")
         if error_message:
             yield error_message
+            return
+
+        if _is_responses_api_call(url, payload):
+            async for chunk in _stream_responses_to_chat_completions(
+                response.aiter_text(),
+                request_model=payload["model"],
+            ):
+                yield chunk
             return
 
         buffer = ""
