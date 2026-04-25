@@ -41,6 +41,17 @@ from .utils import (
 )
 
 gemini_max_token_65k_models = ["gemini-3-pro", "gemini-2.5-pro", "gemini-2.0-pro", "gemini-2.0-flash-thinking", "gemini-2.5-flash"]
+CODEX_CLI_VERSION = "0.125.0"
+CODEX_USER_AGENT = f"codex_cli_rs/{CODEX_CLI_VERSION}"
+_FORCED_CODEX_CLIENT_HEADER_KEYS = {"version", "user-agent"}
+
+def force_codex_client_headers(headers: dict) -> dict:
+    for key in list(headers.keys()):
+        if str(key).lower() in _FORCED_CODEX_CLIENT_HEADER_KEYS:
+            headers.pop(key, None)
+    headers["Version"] = CODEX_CLI_VERSION
+    headers["User-Agent"] = CODEX_USER_AGENT
+    return headers
 
 def _decode_gemini_thought_signature_from_tool_call_id(tool_call_id: str | None) -> str | None:
     if not tool_call_id or not tool_call_id.startswith("call_"):
@@ -1413,6 +1424,21 @@ async def get_aws_payload(request, engine, provider, api_key=None):
 
     return url, headers, payload
 
+def _handle_qwen3_thinking_mode(payload: dict, original_model: str) -> None:
+    # Qwen3+ models (e.g. qwen3.5-plus) enable thinking by default, but the
+    # Alibaba API rejects tool_choice='required' or a function object in that
+    # mode.  Default to thinking OFF so standard tool_choice values work; if
+    # the caller explicitly sets enable_thinking=True, keep thinking ON but
+    # downgrade any incompatible tool_choice to 'auto'.
+    if "qwen" not in original_model.lower():
+        return
+    if payload.get("enable_thinking") is True:
+        tool_choice = payload.get("tool_choice")
+        if tool_choice == "required" or isinstance(tool_choice, dict):
+            payload["tool_choice"] = "auto"
+    else:
+        payload["enable_thinking"] = False
+
 async def get_gpt_payload(request, engine, provider, api_key=None):
     headers = {
         'Content-Type': 'application/json',
@@ -1578,6 +1604,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
                 })
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
+    _handle_qwen3_thinking_mode(payload, original_model)
 
     return url, headers, payload
 
@@ -1597,6 +1624,14 @@ def strip_unsupported_codex_payload_fields(payload: dict, *, strip_store: bool =
     payload.pop("response_format", None)
     if strip_store:
         payload.pop("store", None)
+    return payload
+
+def strip_codex_image_generation_defaults(payload: dict, model: str) -> dict:
+    # gpt-image-2 accepts Responses payloads, but not the Codex chat defaults.
+    if model == "gpt-image-2":
+        payload.pop("parallel_tool_calls", None)
+        payload.pop("reasoning", None)
+        payload.pop("include", None)
     return payload
 
 def _codex_chat_messages_to_responses_input(request: RequestModel, provider: dict) -> list[dict]:
@@ -1761,16 +1796,18 @@ async def get_codex_payload(request, engine, provider, api_key=None):
     # Required / commonly expected Codex headers.
     headers.setdefault("Openai-Beta", "responses=experimental")
     headers.setdefault("Originator", "codex_cli_rs")
-    headers.setdefault("Version", "0.21.0")
+    headers.setdefault("Version", CODEX_CLI_VERSION)
     session_id = str(uuid.uuid4())
     headers.setdefault("Session_id", session_id)
     headers.setdefault("Conversation_id", session_id)
-    headers.setdefault("User-Agent", "codex_cli_rs/0.50.0")
+    headers.setdefault("User-Agent", CODEX_USER_AGENT)
     headers.setdefault("Connection", "Keep-Alive")
     headers.setdefault("Accept", "text/event-stream" if request.stream else "application/json")
+    force_codex_client_headers(headers)
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
 
+    strip_codex_image_generation_defaults(payload, original_model)
     strip_unsupported_codex_payload_fields(payload)
     return url, headers, payload
 
@@ -2093,6 +2130,7 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
             payload[field] = value
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
+    _handle_qwen3_thinking_mode(payload, original_model)
 
     return url, headers, payload
 
@@ -2460,22 +2498,32 @@ async def get_claude_payload(request, engine, provider, api_key=None):
 
     return url, headers, payload
 
-async def get_dalle_payload(request, engine, provider, api_key=None):
+async def get_dalle_payload(request, engine, provider, api_key=None, endpoint=None):
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
-    headers = {
-        "Content-Type": "application/json",
-    }
+    multipart_files = getattr(request, "multipart_files", None)
+    is_multipart = multipart_files is not None
+    headers = {} if is_multipart else {"Content-Type": "application/json"}
     if api_key:
         headers['Authorization'] = f"Bearer {api_key}"
     url = provider['base_url']
-    url = BaseAPI(url).image_url
+    base_api = BaseAPI(url)
+    url = base_api.image_edit_url if endpoint == "/v1/images/edits" else base_api.image_url
+
+    if is_multipart:
+        multipart_data = list(getattr(request, "multipart_data", None) or [])
+        multipart_data = [(key, value) for key, value in multipart_data if key != "model"]
+        multipart_data.append(("model", original_model))
+        payload = {
+            "__multipart_data__": multipart_data,
+            "__multipart_files__": list(multipart_files or []),
+        }
+        return url, headers, payload
 
     # Keep image payload minimal: only include fields explicitly provided by the client
     # (so we don't inject defaults like n/size/response_format), and pass through
     # newer optional fields (e.g. image_size/aspect_ratio) when present.
     payload = request.model_dump(exclude_unset=True)
-    payload.pop("stream", None)
     payload["model"] = original_model
     payload.setdefault("prompt", request.prompt)
 
@@ -2823,7 +2871,7 @@ async def get_search_payload(request: RequestModel, provider: dict, api_key: str
 
     raise HTTPException(status_code=400, detail=f"Unsupported search provider: {provider.get('provider')}")
 
-async def get_payload(request: RequestModel, engine, provider, api_key=None):
+async def get_payload(request: RequestModel, engine, provider, api_key=None, endpoint=None):
     if engine == "gemini":
         return await get_gemini_payload(request, engine, provider, api_key)
     elif engine == "vertex-gemini":
@@ -2850,7 +2898,7 @@ async def get_payload(request: RequestModel, engine, provider, api_key=None):
     elif engine == "cohere":
         return await get_cohere_payload(request, engine, provider, api_key)
     elif engine == "dalle":
-        return await get_dalle_payload(request, engine, provider, api_key)
+        return await get_dalle_payload(request, engine, provider, api_key, endpoint=endpoint)
     elif engine == "whisper":
         return await get_whisper_payload(request, engine, provider, api_key)
     elif engine == "tts":

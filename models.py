@@ -126,6 +126,7 @@ class RequestModel(BaseRequest):
     tools: Optional[List[Tool]] = None
     response_format: Optional[ResponseFormat] = None
     thinking: Optional[Thinking] = None
+    enable_thinking: Optional[bool] = None
     reasoning: Optional[Reasoning] = Field(default=None, exclude=True)
     service_tier: Optional[str] = Field(default=None, exclude=True)
     stream_options: Optional[StreamOptions] = None
@@ -206,6 +207,23 @@ class ImageGenerationRequest(BaseRequest):
     class Config:
         extra = "allow"
 
+class ImageEditRequest(BaseRequest):
+    prompt: str
+    model: Optional[str] = "gpt-image-2"
+    images: Optional[Any] = None
+    image: Optional[Any] = None
+    mask: Optional[Any] = None
+    n: Optional[int] = 1
+    response_format: Optional[str] = "url"
+    size: Optional[str] = "1024x1024"
+    stream: bool = False
+    multipart_data: Optional[List[Tuple[str, Any]]] = Field(default=None, exclude=True)
+    multipart_files: Optional[List[Tuple[str, Any]]] = Field(default=None, exclude=True)
+
+    class Config:
+        extra = "allow"
+        arbitrary_types_allowed = True
+
 class EmbeddingRequest(BaseRequest):
     input: Union[str, List[Union[str, int, List[int]]]]  # 支持字符串或数组
     model: str
@@ -271,7 +289,7 @@ class ResponsesRequest(BaseRequest):
         return None
 
 class UnifiedRequest(BaseModel):
-    data: Union[RequestModel, ResponsesRequest, ImageGenerationRequest, AudioTranscriptionRequest, ModerationRequest, EmbeddingRequest, TextToSpeechRequest]
+    data: Union[RequestModel, ResponsesRequest, ImageGenerationRequest, ImageEditRequest, AudioTranscriptionRequest, ModerationRequest, EmbeddingRequest, TextToSpeechRequest]
 
     @model_validator(mode='before')
     @classmethod
@@ -280,6 +298,9 @@ class UnifiedRequest(BaseModel):
             if "messages" in values:
                 values["data"] = RequestModel(**values)
                 values["data"].request_type = "chat"
+            elif "prompt" in values and any(key in values for key in ("images", "image", "mask")):
+                values["data"] = ImageEditRequest(**values)
+                values["data"].request_type = "image"
             elif "prompt" in values:
                 values["data"] = ImageGenerationRequest(**values)
                 values["data"].request_type = "image"
