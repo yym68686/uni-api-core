@@ -1454,6 +1454,20 @@ async def fetch_aws_response_stream(client, url, headers, payload, model, timeou
 
     yield "data: [DONE]" + end_of_line
 
+def _pop_multipart_payload(payload):
+    if not isinstance(payload, dict) or "__multipart_files__" not in payload:
+        return None
+    files = payload.pop("__multipart_files__", None) or []
+    data = payload.pop("__multipart_data__", None) or []
+    for _, file_value in files:
+        try:
+            file_obj = file_value[1]
+            if hasattr(file_obj, "seek"):
+                file_obj.seek(0)
+        except Exception:
+            continue
+    return data, files
+
 async def fetch_response(client, url, headers, payload, engine, model, timeout=200):
     response = None
     if engine == "search":
@@ -1481,7 +1495,11 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
         yield json_data
         return
 
-    if payload.get("file"):
+    multipart_payload = _pop_multipart_payload(payload)
+    if multipart_payload is not None:
+        data, files = multipart_payload
+        response = await client.post(url, headers=headers, data=data, files=files, timeout=timeout)
+    elif payload.get("file"):
         file = payload.pop("file")
         response = await client.post(url, headers=headers, data=payload, files={"file": file}, timeout=timeout)
     else:
@@ -1849,6 +1867,23 @@ async def fetch_doubao_translation_response_stream(client, url, headers, payload
 
         yield "data: [DONE]" + end_of_line
 
+async def fetch_dalle_response_stream(client, url, headers, payload, timeout=200):
+    multipart_payload = _pop_multipart_payload(payload)
+    if multipart_payload is not None:
+        data, files = multipart_payload
+        stream_kwargs = {"data": data, "files": files}
+    else:
+        json_payload = await asyncio.to_thread(json.dumps, payload)
+        stream_kwargs = {"content": json_payload}
+
+    async with client.stream("POST", url, headers=headers, timeout=timeout, **stream_kwargs) as response:
+        error_message = await check_response(response, "fetch_dalle_response_stream")
+        if error_message:
+            yield error_message
+            return
+        async for chunk in response.aiter_text():
+            yield chunk
+
 async def fetch_response_stream(client, url, headers, payload, engine, model, timeout=200):
     if engine == "gemini" or engine == "vertex-gemini":
         async for chunk in fetch_gemini_response_stream(client, url, headers, payload, model, timeout):
@@ -1873,6 +1908,9 @@ async def fetch_response_stream(client, url, headers, payload, engine, model, ti
             yield chunk
     elif engine == "doubao-translation":
         async for chunk in fetch_doubao_translation_response_stream(client, url, headers, payload, model, timeout):
+            yield chunk
+    elif engine == "dalle":
+        async for chunk in fetch_dalle_response_stream(client, url, headers, payload, timeout):
             yield chunk
     else:
         raise ValueError("Unknown response")

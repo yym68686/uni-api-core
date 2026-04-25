@@ -2451,22 +2451,32 @@ async def get_claude_payload(request, engine, provider, api_key=None):
 
     return url, headers, payload
 
-async def get_dalle_payload(request, engine, provider, api_key=None):
+async def get_dalle_payload(request, engine, provider, api_key=None, endpoint=None):
     model_dict = get_model_dict(provider)
     original_model = model_dict[request.model]
-    headers = {
-        "Content-Type": "application/json",
-    }
+    multipart_files = getattr(request, "multipart_files", None)
+    is_multipart = multipart_files is not None
+    headers = {} if is_multipart else {"Content-Type": "application/json"}
     if api_key:
         headers['Authorization'] = f"Bearer {api_key}"
     url = provider['base_url']
-    url = BaseAPI(url).image_url
+    base_api = BaseAPI(url)
+    url = base_api.image_edit_url if endpoint == "/v1/images/edits" else base_api.image_url
+
+    if is_multipart:
+        multipart_data = list(getattr(request, "multipart_data", None) or [])
+        multipart_data = [(key, value) for key, value in multipart_data if key != "model"]
+        multipart_data.append(("model", original_model))
+        payload = {
+            "__multipart_data__": multipart_data,
+            "__multipart_files__": list(multipart_files or []),
+        }
+        return url, headers, payload
 
     # Keep image payload minimal: only include fields explicitly provided by the client
     # (so we don't inject defaults like n/size/response_format), and pass through
     # newer optional fields (e.g. image_size/aspect_ratio) when present.
     payload = request.model_dump(exclude_unset=True)
-    payload.pop("stream", None)
     payload["model"] = original_model
     payload.setdefault("prompt", request.prompt)
 
@@ -2814,7 +2824,7 @@ async def get_search_payload(request: RequestModel, provider: dict, api_key: str
 
     raise HTTPException(status_code=400, detail=f"Unsupported search provider: {provider.get('provider')}")
 
-async def get_payload(request: RequestModel, engine, provider, api_key=None):
+async def get_payload(request: RequestModel, engine, provider, api_key=None, endpoint=None):
     if engine == "gemini":
         return await get_gemini_payload(request, engine, provider, api_key)
     elif engine == "vertex-gemini":
@@ -2841,7 +2851,7 @@ async def get_payload(request: RequestModel, engine, provider, api_key=None):
     elif engine == "cohere":
         return await get_cohere_payload(request, engine, provider, api_key)
     elif engine == "dalle":
-        return await get_dalle_payload(request, engine, provider, api_key)
+        return await get_dalle_payload(request, engine, provider, api_key, endpoint=endpoint)
     elif engine == "whisper":
         return await get_whisper_payload(request, engine, provider, api_key)
     elif engine == "tts":

@@ -106,6 +106,7 @@ class BaseAPI:
         known_endpoint_suffixes = (
             "/chat/completions",
             "/images/generations",
+            "/images/edits",
             "/audio/transcriptions",
             "/moderations",
             "/embeddings",
@@ -135,6 +136,7 @@ class BaseAPI:
         else:
             self.chat_url: str = urlunparse(parsed_url[:2] + (before_v1 + "chat/completions",) + ("",) * 3)
         self.image_url: str = urlunparse(parsed_url[:2] + (before_v1 + "images/generations",) + ("",) * 3)
+        self.image_edit_url: str = urlunparse(parsed_url[:2] + (before_v1 + "images/edits",) + ("",) * 3)
         if parsed_url.hostname == "dashscope.aliyuncs.com":
             self.audio_transcriptions: str = urlunparse(parsed_url[:2] + ("/api/v1/services/aigc/multimodal-generation/generation",) + ("",) * 3)
         else:
@@ -213,9 +215,11 @@ def get_engine(provider, endpoint=None, original_model=""):
     if provider.get("engine"):
         engine = provider["engine"]
 
-    if engine != "gemini" and (endpoint == "/v1/images/generations" or "stable-diffusion" in original_model):
+    image_endpoint = endpoint in ("/v1/images/generations", "/v1/images/edits")
+    if engine != "gemini" and (image_endpoint or "stable-diffusion" in original_model):
         engine = "dalle"
-        stream = False
+        if not image_endpoint:
+            stream = False
 
     if endpoint == "/v1/audio/transcriptions":
         engine = "whisper"
