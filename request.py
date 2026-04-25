@@ -1424,21 +1424,6 @@ async def get_aws_payload(request, engine, provider, api_key=None):
 
     return url, headers, payload
 
-def _handle_qwen3_thinking_mode(payload: dict, original_model: str) -> None:
-    # Qwen3+ models (e.g. qwen3.5-plus) enable thinking by default, but the
-    # Alibaba API rejects tool_choice='required' or a function object in that
-    # mode.  Default to thinking OFF so standard tool_choice values work; if
-    # the caller explicitly sets enable_thinking=True, keep thinking ON but
-    # downgrade any incompatible tool_choice to 'auto'.
-    if "qwen" not in original_model.lower():
-        return
-    if payload.get("enable_thinking") is True:
-        tool_choice = payload.get("tool_choice")
-        if tool_choice == "required" or isinstance(tool_choice, dict):
-            payload["tool_choice"] = "auto"
-    else:
-        payload["enable_thinking"] = False
-
 async def get_gpt_payload(request, engine, provider, api_key=None):
     headers = {
         'Content-Type': 'application/json',
@@ -1604,7 +1589,6 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
                 })
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
-    _handle_qwen3_thinking_mode(payload, original_model)
 
     return url, headers, payload
 
@@ -1682,24 +1666,29 @@ def _codex_chat_messages_to_responses_input(request: RequestModel, provider: dic
             for item in content_value:
                 item_type = getattr(item, "type", None)
                 if item_type == "text" and getattr(item, "text", None):
-                    content_parts.append({"type": part_type, "text": str(item.text)})
+                    text_part = {"type": part_type, "text": str(item.text)}
+                    text_part.update(_get_extra_fields(item))
+                    content_parts.append(text_part)
                 elif item_type == "image_url" and provider.get("image", True) and role == "user":
                     image_url_obj = getattr(item, "image_url", None)
                     image_url = getattr(image_url_obj, "url", None) if image_url_obj else None
                     if image_url:
-                        content_parts.append({"type": "input_image", "image_url": image_url})
+                        image_part = {"type": "input_image", "image_url": image_url}
+                        image_part.update(_get_extra_fields(item))
+                        content_parts.append(image_part)
                 elif item_type == "input_audio" and role == "user":
                     audio_item = _build_input_audio_item(item)
                     if audio_item:
+                        audio_item.update(_get_extra_fields(item))
                         content_parts.append(audio_item)
 
-        input_items.append(
-            {
-                "type": "message",
-                "role": codex_role,
-                "content": content_parts,
-            }
-        )
+        message_item = {
+            "type": "message",
+            "role": codex_role,
+            "content": content_parts,
+        }
+        message_item.update(_get_extra_fields(msg))
+        input_items.append(message_item)
 
         # Tool calls are separate top-level objects in Codex payloads.
         if role == "assistant":
@@ -2130,7 +2119,6 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
             payload[field] = value
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
-    _handle_qwen3_thinking_mode(payload, original_model)
 
     return url, headers, payload
 
