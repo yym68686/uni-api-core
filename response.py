@@ -582,6 +582,21 @@ async def _stream_responses_to_chat_completions(
             delta=delta,
         )
 
+    async def emit_reasoning_delta(content: str):
+        nonlocal role_sent
+        if not content:
+            return
+        delta = {"content": "", "reasoning_content": content}
+        if not role_sent:
+            delta["role"] = "assistant"
+            role_sent = True
+        yield _build_chat_completion_chunk_sse(
+            response_id=response_id,
+            created_at=created_at,
+            model_name=model_name,
+            delta=delta,
+        )
+
     async def emit_completed_payload(event_payload: dict):
         nonlocal completed_response_seen, role_sent, response_id, created_at, model_name
         completed_response_seen = True
@@ -710,6 +725,17 @@ async def _stream_responses_to_chat_completions(
                 delta_text = str(event_payload.get("delta") or "")
                 async for content_chunk in emit_content_delta(delta_text):
                     yield content_chunk
+                continue
+
+            if event_type == "response.reasoning_summary_text.delta" and isinstance(event_payload, dict):
+                delta_text = str(event_payload.get("delta") or "")
+                async for reasoning_chunk in emit_reasoning_delta(delta_text):
+                    yield reasoning_chunk
+                continue
+
+            if event_type == "response.reasoning_summary_text.done":
+                async for reasoning_chunk in emit_reasoning_delta("\n\n"):
+                    yield reasoning_chunk
                 continue
 
             if event_type != "response.completed" or not isinstance(event_payload, dict):
@@ -1459,14 +1485,79 @@ def _pop_multipart_payload(payload):
         return None
     files = payload.pop("__multipart_files__", None) or []
     data = payload.pop("__multipart_data__", None) or []
-    for _, file_value in files:
-        try:
-            file_obj = file_value[1]
-            if hasattr(file_obj, "seek"):
-                file_obj.seek(0)
-        except Exception:
-            continue
     return data, files
+
+def _quote_multipart_header_value(value) -> str:
+    text = str(value or "")
+    return (
+        text
+        .replace("\\", "\\\\")
+        .replace('"', "%22")
+        .replace("\r", "%0D")
+        .replace("\n", "%0A")
+    )
+
+def _read_multipart_file_content(content) -> bytes:
+    if isinstance(content, bytes):
+        return content
+    if isinstance(content, bytearray):
+        return bytes(content)
+    if isinstance(content, str):
+        return content.encode("utf-8")
+    if hasattr(content, "seek"):
+        try:
+            content.seek(0)
+        except Exception:
+            pass
+    if hasattr(content, "read"):
+        value = content.read()
+        if isinstance(value, str):
+            return value.encode("utf-8")
+        return bytes(value or b"")
+    return bytes(content or b"")
+
+def _build_multipart_content(headers: dict, data: list, files: list) -> tuple[dict, bytes]:
+    boundary = f"----uniapi-{uuid.uuid4().hex}"
+    chunks: list[bytes] = []
+
+    for key, value in data:
+        chunks.append(f"--{boundary}\r\n".encode("utf-8"))
+        chunks.append(
+            f'Content-Disposition: form-data; name="{_quote_multipart_header_value(key)}"\r\n\r\n'.encode("utf-8")
+        )
+        chunks.append(str(value).encode("utf-8"))
+        chunks.append(b"\r\n")
+
+    for key, file_value in files:
+        filename = "upload"
+        content_type = "application/octet-stream"
+        content = file_value
+        if isinstance(file_value, (tuple, list)):
+            if len(file_value) >= 1 and file_value[0]:
+                filename = str(file_value[0])
+            if len(file_value) >= 2:
+                content = file_value[1]
+            if len(file_value) >= 3 and file_value[2]:
+                content_type = str(file_value[2])
+
+        chunks.append(f"--{boundary}\r\n".encode("utf-8"))
+        chunks.append(
+            (
+                f'Content-Disposition: form-data; name="{_quote_multipart_header_value(key)}"; '
+                f'filename="{_quote_multipart_header_value(filename)}"\r\n'
+                f"Content-Type: {content_type}\r\n\r\n"
+            ).encode("utf-8")
+        )
+        chunks.append(_read_multipart_file_content(content))
+        chunks.append(b"\r\n")
+
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    request_headers = dict(headers or {})
+    for key in list(request_headers.keys()):
+        if str(key).lower() == "content-type":
+            request_headers.pop(key, None)
+    request_headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
+    return request_headers, b"".join(chunks)
 
 async def fetch_response(client, url, headers, payload, engine, model, timeout=200):
     response = None
@@ -1498,7 +1589,8 @@ async def fetch_response(client, url, headers, payload, engine, model, timeout=2
     multipart_payload = _pop_multipart_payload(payload)
     if multipart_payload is not None:
         data, files = multipart_payload
-        response = await client.post(url, headers=headers, data=data, files=files, timeout=timeout)
+        multipart_headers, multipart_content = _build_multipart_content(headers, data, files)
+        response = await client.post(url, headers=multipart_headers, content=multipart_content, timeout=timeout)
     elif payload.get("file"):
         file = payload.pop("file")
         response = await client.post(url, headers=headers, data=payload, files={"file": file}, timeout=timeout)
@@ -1871,7 +1963,8 @@ async def fetch_dalle_response_stream(client, url, headers, payload, timeout=200
     multipart_payload = _pop_multipart_payload(payload)
     if multipart_payload is not None:
         data, files = multipart_payload
-        stream_kwargs = {"data": data, "files": files}
+        headers, multipart_content = _build_multipart_content(headers, data, files)
+        stream_kwargs = {"content": multipart_content}
     else:
         json_payload = await asyncio.to_thread(json.dumps, payload)
         stream_kwargs = {"content": json_payload}
