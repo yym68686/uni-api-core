@@ -88,6 +88,9 @@ def _gemini_response_modalities(original_model: str, request_modalities: list[st
         mapped.append("AUDIO")
     return mapped or None
 
+def _get_extra_fields(obj) -> dict:
+    return getattr(obj, 'model_extra', None) or {}
+
 def _build_input_audio_item(item):
     input_audio = getattr(item, "input_audio", None)
     if not input_audio or not getattr(input_audio, "data", None):
@@ -429,13 +432,16 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
             for item in msg.content:
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
+                    text_message.update(_get_extra_fields(item))
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
+                    image_message.update(_get_extra_fields(item))
                     content.append(image_message)
                 elif item.type == "input_audio":
                     audio_part = _build_gemini_input_audio_part(item)
                     if audio_part:
+                        audio_part.update(_get_extra_fields(item))
                         if "file_data" in audio_part:
                             file_parts.append(audio_part)
                         else:
@@ -503,7 +509,9 @@ async def get_gemini_payload(request, engine, provider, api_key=None):
                 }
             )
         elif content:
-            messages.append({"role": role, "parts": content})
+            msg_dict = {"role": role, "parts": content}
+            msg_dict.update(_get_extra_fields(msg))
+            messages.append(msg_dict)
     if system_prompt.strip():
         systemInstruction = {"parts": [{"text": system_prompt}]}
 
@@ -800,13 +808,16 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
             for item in msg.content:
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
+                    text_message.update(_get_extra_fields(item))
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
+                    image_message.update(_get_extra_fields(item))
                     content.append(image_message)
                 elif item.type == "input_audio":
                     audio_part = _build_gemini_input_audio_part(item)
                     if audio_part:
+                        audio_part.update(_get_extra_fields(item))
                         if "file_data" in audio_part:
                             file_parts.append(audio_part)
                         else:
@@ -873,7 +884,9 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
                 }
             )
         elif content:
-            messages.append({"role": role, "parts": content})
+            msg_dict = {"role": role, "parts": content}
+            msg_dict.update(_get_extra_fields(msg))
+            messages.append(msg_dict)
     if system_prompt.strip():
         systemInstruction = {"parts": [{"text": system_prompt}]}
 
@@ -1055,9 +1068,11 @@ async def get_vertex_claude_payload(request, engine, provider, api_key=None):
             for item in msg.content:
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
+                    text_message.update(_get_extra_fields(item))
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
+                    image_message.update(_get_extra_fields(item))
                     content.append(image_message)
         else:
             content = msg.content
@@ -1094,7 +1109,9 @@ async def get_vertex_claude_payload(request, engine, provider, api_key=None):
                 "content": msg.content
             }]})
         elif msg.role != "system":
-            messages.append({"role": msg.role, "content": content})
+            msg_dict = {"role": msg.role, "content": content}
+            msg_dict.update(_get_extra_fields(msg))
+            messages.append(msg_dict)
         elif msg.role == "system":
             system_prompt = content
 
@@ -1258,9 +1275,11 @@ async def get_aws_payload(request, engine, provider, api_key=None):
             for item in msg.content:
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
+                    text_message.update(_get_extra_fields(item))
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
+                    image_message.update(_get_extra_fields(item))
                     content.append(image_message)
         else:
             content = msg.content
@@ -1297,7 +1316,9 @@ async def get_aws_payload(request, engine, provider, api_key=None):
                 "content": msg.content
             }]})
         elif msg.role != "system":
-            messages.append({"role": msg.role, "content": content})
+            msg_dict = {"role": msg.role, "content": content}
+            msg_dict.update(_get_extra_fields(msg))
+            messages.append(msg_dict)
         # elif msg.role == "system":
         #     system_prompt = content
 
@@ -1403,21 +1424,6 @@ async def get_aws_payload(request, engine, provider, api_key=None):
 
     return url, headers, payload
 
-def _handle_qwen3_thinking_mode(payload: dict, original_model: str) -> None:
-    # Qwen3+ models (e.g. qwen3.5-plus) enable thinking by default, but the
-    # Alibaba API rejects tool_choice='required' or a function object in that
-    # mode.  Default to thinking OFF so standard tool_choice values work; if
-    # the caller explicitly sets enable_thinking=True, keep thinking ON but
-    # downgrade any incompatible tool_choice to 'auto'.
-    if "qwen" not in original_model.lower():
-        return
-    if payload.get("enable_thinking") is True:
-        tool_choice = payload.get("tool_choice")
-        if tool_choice == "required" or isinstance(tool_choice, dict):
-            payload["tool_choice"] = "auto"
-    else:
-        payload["enable_thinking"] = False
-
 async def get_gpt_payload(request, engine, provider, api_key=None):
     headers = {
         'Content-Type': 'application/json',
@@ -1444,6 +1450,7 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
                     text_message = await get_text_message(item.text, engine)
                     if use_responses_api:
                         text_message["type"] = "input_text"
+                    text_message.update(_get_extra_fields(item))
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
@@ -1452,10 +1459,12 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
                             "type": "input_image",
                             "image_url": image_message["image_url"]["url"]
                         }
+                    image_message.update(_get_extra_fields(item))
                     content.append(image_message)
                 elif item.type == "input_audio":
                     audio_item = _build_input_audio_item(item)
                     if audio_item:
+                        audio_item.update(_get_extra_fields(item))
                         content.append(audio_item)
         else:
             content = msg.content
@@ -1481,7 +1490,9 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
             if provider.get("tools"):
                 messages.append({"role": msg.role, "tool_call_id": tool_call_id, "content": content})
         else:
-            messages.append({"role": msg.role, "content": content})
+            msg_dict = {"role": msg.role, "content": content}
+            msg_dict.update(_get_extra_fields(msg))
+            messages.append(msg_dict)
 
     if use_responses_api:
         payload = {
@@ -1578,7 +1589,6 @@ async def get_gpt_payload(request, engine, provider, api_key=None):
                 })
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
-    _handle_qwen3_thinking_mode(payload, original_model)
 
     return url, headers, payload
 
@@ -1656,24 +1666,29 @@ def _codex_chat_messages_to_responses_input(request: RequestModel, provider: dic
             for item in content_value:
                 item_type = getattr(item, "type", None)
                 if item_type == "text" and getattr(item, "text", None):
-                    content_parts.append({"type": part_type, "text": str(item.text)})
+                    text_part = {"type": part_type, "text": str(item.text)}
+                    text_part.update(_get_extra_fields(item))
+                    content_parts.append(text_part)
                 elif item_type == "image_url" and provider.get("image", True) and role == "user":
                     image_url_obj = getattr(item, "image_url", None)
                     image_url = getattr(image_url_obj, "url", None) if image_url_obj else None
                     if image_url:
-                        content_parts.append({"type": "input_image", "image_url": image_url})
+                        image_part = {"type": "input_image", "image_url": image_url}
+                        image_part.update(_get_extra_fields(item))
+                        content_parts.append(image_part)
                 elif item_type == "input_audio" and role == "user":
                     audio_item = _build_input_audio_item(item)
                     if audio_item:
+                        audio_item.update(_get_extra_fields(item))
                         content_parts.append(audio_item)
 
-        input_items.append(
-            {
-                "type": "message",
-                "role": codex_role,
-                "content": content_parts,
-            }
-        )
+        message_item = {
+            "type": "message",
+            "role": codex_role,
+            "content": content_parts,
+        }
+        message_item.update(_get_extra_fields(msg))
+        input_items.append(message_item)
 
         # Tool calls are separate top-level objects in Codex payloads.
         if role == "assistant":
@@ -1824,13 +1839,16 @@ async def get_azure_payload(request, engine, provider, api_key=None):
             for item in msg.content:
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
+                    text_message.update(_get_extra_fields(item))
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
+                    image_message.update(_get_extra_fields(item))
                     content.append(image_message)
                 elif item.type == "input_audio":
                     audio_item = _build_input_audio_item(item)
                     if audio_item:
+                        audio_item.update(_get_extra_fields(item))
                         content.append(audio_item)
         else:
             content = msg.content
@@ -1854,7 +1872,9 @@ async def get_azure_payload(request, engine, provider, api_key=None):
             if provider.get("tools"):
                 messages.append({"role": msg.role, "tool_call_id": tool_call_id, "content": content})
         else:
-            messages.append({"role": msg.role, "content": content})
+            msg_dict = {"role": msg.role, "content": content}
+            msg_dict.update(_get_extra_fields(msg))
+            messages.append(msg_dict)
 
     payload = {
         "model": original_model,
@@ -1904,13 +1924,16 @@ async def get_azure_databricks_payload(request, engine, provider, api_key=None):
             for item in msg.content:
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
+                    text_message.update(_get_extra_fields(item))
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
+                    image_message.update(_get_extra_fields(item))
                     content.append(image_message)
                 elif item.type == "input_audio":
                     audio_item = _build_input_audio_item(item)
                     if audio_item:
+                        audio_item.update(_get_extra_fields(item))
                         content.append(audio_item)
         else:
             content = msg.content
@@ -1934,7 +1957,9 @@ async def get_azure_databricks_payload(request, engine, provider, api_key=None):
             if provider.get("tools"):
                 messages.append({"role": msg.role, "tool_call_id": tool_call_id, "content": content})
         else:
-            messages.append({"role": msg.role, "content": content})
+            msg_dict = {"role": msg.role, "content": content}
+            msg_dict.update(_get_extra_fields(msg))
+            messages.append(msg_dict)
 
     if "claude-3-7-sonnet" in original_model:
         max_tokens = 128000
@@ -2026,13 +2051,16 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
             for item in msg.content:
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
+                    text_message.update(_get_extra_fields(item))
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
+                    image_message.update(_get_extra_fields(item))
                     content.append(image_message)
                 elif item.type == "input_audio":
                     audio_item = _build_input_audio_item(item)
                     if audio_item:
+                        audio_item.update(_get_extra_fields(item))
                         content.append(audio_item)
         else:
             content = msg.content
@@ -2060,13 +2088,17 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
             if isinstance(content, list):
                 for item in content:
                     if item["type"] == "text":
-                        messages.append({"role": msg.role, "content": item["text"]})
+                        msg_dict = {"role": msg.role, "content": item["text"]}
+                        msg_dict.update(_get_extra_fields(msg))
+                        messages.append(msg_dict)
                     elif item["type"] == "image_url":
                         messages.append({"role": msg.role, "content": [await get_image_message(item["image_url"]["url"], engine)]})
                     elif item["type"] == "input_audio":
                         messages.append({"role": msg.role, "content": [item]})
             else:
-                messages.append({"role": msg.role, "content": content})
+                msg_dict = {"role": msg.role, "content": content}
+                msg_dict.update(_get_extra_fields(msg))
+                messages.append(msg_dict)
 
     payload = {
         "model": original_model,
@@ -2087,7 +2119,6 @@ async def get_openrouter_payload(request, engine, provider, api_key=None):
             payload[field] = value
 
     apply_post_body_parameter_overrides(payload, provider, request.model)
-    _handle_qwen3_thinking_mode(payload, original_model)
 
     return url, headers, payload
 
@@ -2295,9 +2326,11 @@ async def get_claude_payload(request, engine, provider, api_key=None):
             for item in msg.content:
                 if item.type == "text":
                     text_message = await get_text_message(item.text, engine)
+                    text_message.update(_get_extra_fields(item))
                     content.append(text_message)
                 elif item.type == "image_url" and provider.get("image", True):
                     image_message = await get_image_message(item.image_url.url, engine)
+                    image_message.update(_get_extra_fields(item))
                     content.append(image_message)
         else:
             content = msg.content
@@ -2334,7 +2367,9 @@ async def get_claude_payload(request, engine, provider, api_key=None):
                 "content": msg.content
             }]})
         elif msg.role != "system":
-            messages.append({"role": msg.role, "content": content})
+            msg_dict = {"role": msg.role, "content": content}
+            msg_dict.update(_get_extra_fields(msg))
+            messages.append(msg_dict)
         elif msg.role == "system":
             system_prompt = content
 

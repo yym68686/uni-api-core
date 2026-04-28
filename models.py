@@ -47,6 +47,7 @@ class InputAudio(BaseModel):
         extra = "allow"  # 允许未来扩展字段，如 sample_rate 等
 
 class ContentItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
     type: str
     text: Optional[str] = None
     image_url: Optional[ImageUrl] = None
@@ -102,6 +103,7 @@ class AudioOutput(BaseModel):
         extra = "allow"  # 允许未来扩展字段，如 bitrate/sample_rate 等
 
 class RequestModel(BaseRequest):
+    model_config = ConfigDict(extra="allow")
     model: str
     messages: List[Message]
     modalities: Optional[List[str]] = None
@@ -124,7 +126,6 @@ class RequestModel(BaseRequest):
     tools: Optional[List[Tool]] = None
     response_format: Optional[ResponseFormat] = None
     thinking: Optional[Thinking] = None
-    enable_thinking: Optional[bool] = None
     reasoning: Optional[Reasoning] = Field(default=None, exclude=True)
     service_tier: Optional[str] = Field(default=None, exclude=True)
     stream_options: Optional[StreamOptions] = None
