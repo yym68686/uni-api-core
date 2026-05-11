@@ -609,12 +609,12 @@ provider_api_circular_list = defaultdict(ThreadSafeCircularList)
 # europe-west4
 
 
-c35s = ThreadSafeCircularList(["us-east5", "europe-west1"])
-c3s = ThreadSafeCircularList(["us-east5", "us-central1", "asia-southeast1"])
-c3o = ThreadSafeCircularList(["us-east5"])
-c4 = ThreadSafeCircularList(["us-east5", "europe-west1", "asia-east1"])
-c3h = ThreadSafeCircularList(["us-east5", "us-central1", "europe-west1", "europe-west4"])
-gemini1 = ThreadSafeCircularList(["us-central1", "us-east4", "us-west1", "us-west4", "europe-west1", "europe-west2"])
+c35s = ThreadSafeCircularList(["us-east5", "europe-west1"], schedule_algorithm="fixed_priority")
+c3s = ThreadSafeCircularList(["us-east5", "us-central1", "asia-southeast1"], schedule_algorithm="fixed_priority")
+c3o = ThreadSafeCircularList(["us-east5"], schedule_algorithm="fixed_priority")
+c4 = ThreadSafeCircularList(["us-east5", "europe-west1", "asia-east1"], schedule_algorithm="fixed_priority")
+c3h = ThreadSafeCircularList(["us-east5", "us-central1", "europe-west1", "europe-west4"], schedule_algorithm="fixed_priority")
+gemini1 = ThreadSafeCircularList(["us-central1", "us-east4", "us-west1", "us-west4", "europe-west1", "europe-west2"], schedule_algorithm="fixed_priority")
 gemini_preview = ThreadSafeCircularList(["global"])
 # gemini2_5_pro_exp = ThreadSafeCircularList(["global"])
 gemini2_5_pro_exp = ThreadSafeCircularList([
