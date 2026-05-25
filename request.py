@@ -774,7 +774,8 @@ async def get_vertex_gemini_payload(request, engine, provider, api_key=None):
         location = gemini1
 
     if api_key is not None and len(api_key) > 2 and api_key[2] == ".":
-        url = f"https://aiplatform.googleapis.com/v1/publishers/google/models/{original_model}:{gemini_stream}?key={api_key}"
+        base = (provider.get("base_url") or "https://aiplatform.googleapis.com").rstrip("/")
+        url = f"{base}/v1/publishers/google/models/{original_model}:{gemini_stream}?key={api_key}"
         headers.pop("Authorization", None)
     elif "google-vertex-ai" in provider.get("base_url", "") or any(global_model in original_model for global_model in global_models):
         url = provider.get("base_url").rstrip('/') + "/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:{stream}".format(
