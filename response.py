@@ -13,11 +13,14 @@ from .log_config import logger
 
 from .utils import (
     safe_get,
+    IncrementalSSEParser,
     _build_openai_usage,
     generate_sse_response,
     generate_no_stream_response,
     end_of_line,
+    is_sse_comment_frame as _shared_is_sse_comment_frame,
     parse_json_safely,
+    parse_sse_event,
     gemini_audio_inline_data_to_wav_base64,
     cache_put_gemini_image_thought_signature,
 )
@@ -207,40 +210,11 @@ def _mime_type_from_output_format(output_format: str | None) -> str:
 
 
 def _is_sse_comment_frame(raw_event: str) -> bool:
-    has_line = False
-    for line in raw_event.splitlines():
-        if not line:
-            continue
-        has_line = True
-        if not line.startswith(":"):
-            return False
-    return has_line
+    return _shared_is_sse_comment_frame(raw_event)
 
 
 def _extract_responses_stream_sse_event(raw_event: str) -> tuple[str, object]:
-    event_name = ""
-    data_lines: list[str] = []
-    for line in raw_event.splitlines():
-        if line.startswith("event:"):
-            event_name = line[6:].strip()
-        elif line.startswith("data:"):
-            data_lines.append(line[5:].strip())
-
-    data_str = "\n".join(data_lines).strip()
-    if data_str == "[DONE]":
-        return "[DONE]", "[DONE]"
-
-    parsed_payload: object = data_str
-    if data_str:
-        try:
-            parsed_payload = json.loads(data_str)
-        except Exception:
-            parsed_payload = data_str
-
-    if not event_name and isinstance(parsed_payload, dict):
-        event_name = str(parsed_payload.get("type") or "").strip()
-
-    return event_name, parsed_payload
+    return parse_sse_event(raw_event)
 
 
 def _extract_response_model_name(payload: object) -> str | None:
@@ -555,7 +529,6 @@ async def _stream_responses_to_chat_completions(
     *,
     request_model: str,
 ):
-    text_buffer = ""
     emitted_content = ""
     role_sent = False
     response_id = f"chatcmpl_{uuid.uuid4().hex}"
@@ -663,15 +636,9 @@ async def _stream_responses_to_chat_completions(
             )
         yield "data: [DONE]" + end_of_line
 
+    sse_parser = IncrementalSSEParser()
     async for chunk in text_iterator:
-        text_buffer += chunk
-        while True:
-            match = re.search(r"\r?\n\r?\n", text_buffer)
-            if not match:
-                break
-
-            raw_event = text_buffer[:match.start()]
-            text_buffer = text_buffer[match.end():]
+        for raw_event in sse_parser.feed(chunk):
             if not raw_event.strip():
                 continue
 
@@ -1900,36 +1867,24 @@ async def fetch_doubao_translation_response_stream(client, url, headers, payload
             yield error_message
             return
 
-        buffer = ""
+        sse_parser = IncrementalSSEParser()
         prompt_tokens = 0
         completion_tokens = 0
         total_tokens = 0
 
         async for chunk in response.aiter_text():
-            buffer += chunk.replace("\r", "")
-            while "\n\n" in buffer:
-                raw_event, buffer = buffer.split("\n\n", 1)
+            for raw_event in sse_parser.feed(chunk):
                 if not raw_event.strip():
                     continue
 
-                event_name = ""
-                data_lines = []
-                for line in raw_event.split("\n"):
-                    if line.startswith("event:"):
-                        event_name = line[6:].strip()
-                    elif line.startswith("data:"):
-                        data_lines.append(line[5:].strip())
-
-                data_str = "\n".join(data_lines).strip()
-                if not data_str:
+                event_name, event_data = parse_sse_event(raw_event)
+                if not event_name and not event_data:
                     continue
-                if data_str == "[DONE]":
+                if event_name == "[DONE]":
                     yield "data: [DONE]" + end_of_line
                     return
 
-                try:
-                    event_data = await asyncio.to_thread(json.loads, data_str)
-                except Exception:
+                if not isinstance(event_data, dict):
                     continue
 
                 if event_name == "response.output_text.delta":

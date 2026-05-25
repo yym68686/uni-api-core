@@ -14,7 +14,7 @@ import wave
 from time import time
 from PIL import Image
 from fastapi import HTTPException
-from collections import defaultdict, OrderedDict
+from collections import defaultdict, deque, OrderedDict
 from httpx_socks import AsyncProxyTransport
 from urllib.parse import urlparse, urlunparse
 
@@ -43,6 +43,68 @@ class _BoundedFIFOCache:
                 self._data.popitem(last=False)
 
 _GEMINI_IMAGE_THOUGHT_SIGNATURE_CACHE = _BoundedFIFOCache(max_items=100)
+
+
+class IncrementalSSEParser:
+    """Incrementally split SSE text into complete raw event frames."""
+
+    def __init__(self):
+        self._buffer = ""
+
+    @property
+    def pending_text(self) -> str:
+        return self._buffer
+
+    def feed(self, chunk: str | bytes | bytearray) -> list[str]:
+        if isinstance(chunk, (bytes, bytearray)):
+            chunk = bytes(chunk).decode("utf-8", errors="replace")
+        self._buffer += str(chunk).replace("\r\n", "\n").replace("\r", "\n")
+
+        events = []
+        while True:
+            separator_index = self._buffer.find("\n\n")
+            if separator_index < 0:
+                break
+            events.append(self._buffer[:separator_index])
+            self._buffer = self._buffer[separator_index + 2 :]
+        return events
+
+
+def is_sse_comment_frame(raw_event: str) -> bool:
+    has_line = False
+    for line in raw_event.splitlines():
+        if not line:
+            continue
+        has_line = True
+        if not line.startswith(":"):
+            return False
+    return has_line
+
+
+def parse_sse_event(raw_event: str) -> tuple[str, object]:
+    event_name = ""
+    data_lines: list[str] = []
+    for line in raw_event.splitlines():
+        if line.startswith("event:"):
+            event_name = line[6:].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].strip())
+
+    data_str = "\n".join(data_lines).strip()
+    if data_str == "[DONE]":
+        return "[DONE]", "[DONE]"
+
+    parsed_payload: object = data_str
+    if data_str:
+        try:
+            parsed_payload = json.loads(data_str)
+        except Exception:
+            parsed_payload = data_str
+
+    if not event_name and isinstance(parsed_payload, dict):
+        event_name = str(parsed_payload.get("type") or "").strip()
+
+    return event_name, parsed_payload
 
 def _normalize_base64_payload(payload: str) -> str:
     if not payload:
@@ -384,7 +446,7 @@ class ThreadSafeCircularList:
 
         self.index = 0
         self.lock = asyncio.Lock()
-        self.requests = defaultdict(lambda: defaultdict(list))
+        self.requests = defaultdict(lambda: defaultdict(lambda: defaultdict(deque)))
         self.cooling_until = defaultdict(float)
         self.rate_limits = {}
         self.reordering_task = None
@@ -473,24 +535,36 @@ class ThreadSafeCircularList:
         if rate_limit is None:
             rate_limit = self.rate_limits.get("default", [(999999, 60)])  # 默认限制
 
+        request_windows = self.requests[item][model_key]
+        positive_periods = {period for _, period in rate_limit if period > 0}
+        for period in positive_periods:
+            cutoff = now - period
+            window = request_windows[period]
+            while window and window[0] <= cutoff:
+                window.popleft()
+
         # 检查所有速率限制条件
         for limit_count, limit_period in rate_limit:
-            # 使用特定模型的请求记录进行计算
-            recent_requests = sum(1 for req in self.requests[item][model_key] if req > now - limit_period)
-            if recent_requests >= limit_count:
+            if limit_period <= 0:
+                continue
+            if len(request_windows[limit_period]) >= limit_count:
                 if not is_check:
                     logger.warning(f"API key {item}: model: {model_key} has been rate limited ({limit_count}/{limit_period} seconds)")
                 return True
 
-        # 清理太旧的请求记录
-        max_period = max(period for _, period in rate_limit)
-        self.requests[item][model_key] = [req for req in self.requests[item][model_key] if req > now - max_period]
-
         # 记录新的请求
         if not is_check:
-            self.requests[item][model_key].append(now)
+            for period in positive_periods:
+                request_windows[period].append(now)
 
         return False
+
+    def rollback_rate_limit_record(self, item: str, model: str = None) -> None:
+        model_key = model or "default"
+        request_windows = self.requests[item][model_key]
+        for window in request_windows.values():
+            if window:
+                window.pop()
 
     async def next(self, model: str = None):
         async with self.lock:
