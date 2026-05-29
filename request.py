@@ -187,34 +187,33 @@ def apply_post_body_parameter_overrides(
 
     skipped = skip_keys or set()
 
-    model_overrides = overrides.get(request_model)
-    if isinstance(model_overrides, dict):
-        for key, value in model_overrides.items():
-            if key in skipped or key == removal_key:
+    def apply_override_values(override: dict, *, skip_model_override_keys: bool = False) -> None:
+        for key, value in override.items():
+            if (
+                key in skipped
+                or key == removal_key
+                or (skip_model_override_keys and key in model_dict)
+            ):
                 continue
             current = payload.get(key)
             if isinstance(current, dict) and isinstance(value, dict):
                 _merge_post_body_override_dict(current, value, removal_key=removal_key)
             else:
                 payload[key] = copy.deepcopy(value)
-        for key in normalize_removals(model_overrides.get(removal_key)):
+
+    def apply_removals(override: dict) -> None:
+        for key in normalize_removals(override.get(removal_key)):
             if key in skipped:
                 continue
             payload.pop(key, None)
 
-    for key, value in overrides.items():
-        if key in model_dict or key in skipped or key == removal_key:
-            continue
-        current = payload.get(key)
-        if isinstance(current, dict) and isinstance(value, dict):
-            _merge_post_body_override_dict(current, value, removal_key=removal_key)
-        else:
-            payload[key] = copy.deepcopy(value)
+    apply_override_values(overrides, skip_model_override_keys=True)
+    apply_removals(overrides)
 
-    for key in normalize_removals(overrides.get(removal_key)):
-        if key in skipped:
-            continue
-        payload.pop(key, None)
+    model_overrides = overrides.get(request_model)
+    if isinstance(model_overrides, dict):
+        apply_override_values(model_overrides)
+        apply_removals(model_overrides)
 
     return payload
 
