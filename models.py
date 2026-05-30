@@ -71,7 +71,7 @@ class ToolChoice(BaseModel):
     function: Optional[FunctionChoice] = None
 
 class BaseRequest(BaseModel):
-    request_type: Optional[Literal["chat", "image", "audio", "moderation"]] = Field(default=None, exclude=True)
+    request_type: Optional[Literal["chat", "image", "audio", "moderation", "tts", "embedding", "video"]] = Field(default=None, exclude=True)
 
 class JsonSchema(BaseModel):
     name: str
@@ -287,8 +287,22 @@ class ResponsesRequest(BaseRequest):
                         return part.get("text")
         return None
 
+class ContentGenerationTaskRequest(BaseRequest):
+    model: str
+    content: List[Dict[str, Any]]
+
+    model_config = ConfigDict(extra="allow")
+
+    def get_last_text_message(self) -> Optional[str]:
+        for item in reversed(self.content or []):
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "text" and item.get("text"):
+                return str(item.get("text"))
+        return None
+
 class UnifiedRequest(BaseModel):
-    data: Union[RequestModel, ResponsesRequest, ImageGenerationRequest, ImageEditRequest, AudioTranscriptionRequest, ModerationRequest, EmbeddingRequest, TextToSpeechRequest]
+    data: Union[RequestModel, ResponsesRequest, ImageGenerationRequest, ImageEditRequest, AudioTranscriptionRequest, ModerationRequest, EmbeddingRequest, TextToSpeechRequest, ContentGenerationTaskRequest]
 
     @model_validator(mode='before')
     @classmethod
@@ -303,6 +317,9 @@ class UnifiedRequest(BaseModel):
             elif "prompt" in values:
                 values["data"] = ImageGenerationRequest(**values)
                 values["data"].request_type = "image"
+            elif "content" in values and isinstance(values.get("content"), list):
+                values["data"] = ContentGenerationTaskRequest(**values)
+                values["data"].request_type = "video"
             elif "file" in values:
                 values["data"] = AudioTranscriptionRequest(**values)
                 values["data"].request_type = "audio"

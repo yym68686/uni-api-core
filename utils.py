@@ -223,6 +223,10 @@ def get_engine(provider, endpoint=None, original_model=""):
     # Config-driven Jina search: route via /search endpoints and use a dedicated engine.
     if endpoint in ("/search", "/v1/search"):
         return "search", False
+    if endpoint:
+        normalized_endpoint = str(endpoint).rstrip("/")
+        if normalized_endpoint in ("/contents/generations/tasks", "/v1/contents/generations/tasks"):
+            return "content-generation", False
 
     parsed_url = urlparse(provider['base_url'])
     # print("parsed_url", parsed_url)
