@@ -140,10 +140,21 @@ def cache_get_gemini_image_thought_signature(inline_data_base64: str) -> str | N
         return None
     return _GEMINI_IMAGE_THOUGHT_SIGNATURE_CACHE.get(key)
 
+def _redact_provider_for_log(provider):
+    if not isinstance(provider, dict):
+        return provider
+    redacted = dict(provider)
+    for key in list(redacted.keys()):
+        normalized = str(key).lower()
+        if any(token in normalized for token in ("api", "key", "secret", "token", "password")):
+            redacted[key] = "***redacted***"
+    return redacted
+
+
 def get_model_dict(provider):
     model_dict = {}
     if "model" not in provider:
-        logger.error(f"Error: model is not set in provider: {provider}")
+        logger.error("Error: model is not set in provider: %s", _redact_provider_for_log(provider))
         return model_dict
     for model in provider['model']:
         if isinstance(model, str):
