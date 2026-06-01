@@ -289,17 +289,40 @@ class ResponsesRequest(BaseRequest):
 
 class ContentGenerationTaskRequest(BaseRequest):
     model: str
-    content: List[Dict[str, Any]]
+    content: Optional[List[Dict[str, Any]]] = None
+    prompt: Optional[str] = None
+    resources: Optional[List[Dict[str, Any]]] = None
 
     model_config = ConfigDict(extra="allow")
 
     def get_last_text_message(self) -> Optional[str]:
+        if self.prompt:
+            return str(self.prompt)
         for item in reversed(self.content or []):
             if not isinstance(item, dict):
                 continue
             if item.get("type") == "text" and item.get("text"):
                 return str(item.get("text"))
         return None
+
+def _looks_like_video_request(values: Dict[str, Any]) -> bool:
+    if "model" not in values:
+        return False
+    if "content" in values and isinstance(values.get("content"), list):
+        return True
+    video_keys = {
+        "duration",
+        "ratio",
+        "resolution",
+        "resources",
+        "provider",
+        "provider_options",
+        "audio",
+        "generate_audio",
+        "watermark",
+        "seed",
+    }
+    return any(key in values for key in video_keys)
 
 class UnifiedRequest(BaseModel):
     data: Union[RequestModel, ResponsesRequest, ImageGenerationRequest, ImageEditRequest, AudioTranscriptionRequest, ModerationRequest, EmbeddingRequest, TextToSpeechRequest, ContentGenerationTaskRequest]
@@ -311,15 +334,15 @@ class UnifiedRequest(BaseModel):
             if "messages" in values:
                 values["data"] = RequestModel(**values)
                 values["data"].request_type = "chat"
+            elif _looks_like_video_request(values):
+                values["data"] = ContentGenerationTaskRequest(**values)
+                values["data"].request_type = "video"
             elif "prompt" in values and any(key in values for key in ("images", "image", "mask")):
                 values["data"] = ImageEditRequest(**values)
                 values["data"].request_type = "image"
             elif "prompt" in values:
                 values["data"] = ImageGenerationRequest(**values)
                 values["data"].request_type = "image"
-            elif "content" in values and isinstance(values.get("content"), list):
-                values["data"] = ContentGenerationTaskRequest(**values)
-                values["data"].request_type = "video"
             elif "file" in values:
                 values["data"] = AudioTranscriptionRequest(**values)
                 values["data"].request_type = "audio"

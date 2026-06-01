@@ -236,7 +236,12 @@ def get_engine(provider, endpoint=None, original_model=""):
         return "search", False
     if endpoint:
         normalized_endpoint = str(endpoint).rstrip("/")
-        if normalized_endpoint in ("/contents/generations/tasks", "/v1/contents/generations/tasks"):
+        if normalized_endpoint in (
+            "/contents/generations/tasks",
+            "/v1/contents/generations/tasks",
+            "/video/tasks",
+            "/v1/video/tasks",
+        ):
             return "content-generation", False
 
     parsed_url = urlparse(provider['base_url'])
