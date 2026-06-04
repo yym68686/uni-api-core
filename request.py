@@ -1602,10 +1602,22 @@ def _codex_responses_url(base_url: str) -> str:
         return base
     return f"{base}/responses"
 
+def _strip_key_recursive(value, key: str):
+    if isinstance(value, dict):
+        value.pop(key, None)
+        for child in value.values():
+            _strip_key_recursive(child, key)
+    elif isinstance(value, list):
+        for child in value:
+            _strip_key_recursive(child, key)
+    return value
+
+
 def strip_unsupported_codex_payload_fields(payload: dict, *, strip_store: bool = False) -> dict:
     # Codex rejects these fields; drop them on any Codex-bound request.
     payload.pop("max_output_tokens", None)
     payload.pop("response_format", None)
+    _strip_key_recursive(payload, "cache_control")
     if strip_store:
         payload.pop("store", None)
     return payload
