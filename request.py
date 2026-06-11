@@ -1617,6 +1617,7 @@ def strip_unsupported_codex_payload_fields(payload: dict, *, strip_store: bool =
     # Codex rejects these fields; drop them on any Codex-bound request.
     payload.pop("max_output_tokens", None)
     payload.pop("response_format", None)
+    payload.pop("top_p", None)
     _strip_key_recursive(payload, "cache_control")
     if strip_store:
         payload.pop("store", None)
