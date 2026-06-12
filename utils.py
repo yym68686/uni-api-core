@@ -11,6 +11,7 @@ import asyncio
 import threading
 import traceback
 import wave
+from contextlib import aclosing
 from time import time
 from PIL import Image
 from fastapi import HTTPException
@@ -1017,75 +1018,76 @@ async def collect_openai_chat_completion_from_streaming_sse(
     # tool_calls collection: index -> {id, name, arguments_parts}
     tool_calls_by_index: dict[int, dict] = {}
 
-    async for item in sse_generator:
-        if item is None:
-            continue
-        if isinstance(item, (bytes, bytearray)):
-            try:
-                item = item.decode("utf-8", errors="replace")
-            except Exception:
-                item = str(item)
-        text = str(item).strip()
-        if not text or text.startswith(":"):
-            continue
-
-        if text.startswith("data:"):
-            data_str = text[len("data:"):].strip()
-        else:
-            data_str = text
-
-        if data_str == "[DONE]":
-            break
-
-        try:
-            chunk = json.loads(data_str)
-        except Exception:
-            continue
-        if not isinstance(chunk, dict):
-            continue
-
-        if created_ts is None:
-            try:
-                created_ts = int(chunk.get("created"))
-            except Exception:
-                created_ts = None
-
-        choices = chunk.get("choices")
-        usage = chunk.get("usage")
-        if (not choices) and isinstance(usage, dict):
-            usage_obj = usage
-            continue
-
-        if not isinstance(choices, list):
-            continue
-        for choice in choices:
-            if not isinstance(choice, dict):
+    async with aclosing(sse_generator):
+        async for item in sse_generator:
+            if item is None:
                 continue
-            delta = choice.get("delta") or {}
-            if not isinstance(delta, dict):
+            if isinstance(item, (bytes, bytearray)):
+                try:
+                    item = item.decode("utf-8", errors="replace")
+                except Exception:
+                    item = str(item)
+            text = str(item).strip()
+            if not text or text.startswith(":"):
                 continue
-            content = delta.get("content")
-            if content is not None:
-                content_parts.append(str(content))
-            reasoning_content = delta.get("reasoning_content")
-            if reasoning_content is not None:
-                reasoning_parts.append(str(reasoning_content))
-            tool_calls = delta.get("tool_calls")
-            if isinstance(tool_calls, list):
-                for tc in tool_calls:
-                    if not isinstance(tc, dict):
-                        continue
-                    idx = tc.get("index", 0)
-                    if idx not in tool_calls_by_index:
-                        tool_calls_by_index[idx] = {"id": None, "name": None, "arguments_parts": []}
-                    entry = tool_calls_by_index[idx]
-                    if tc.get("id"):
-                        entry["id"] = tc["id"]
-                    func = tc.get("function") or {}
-                    if func.get("name"):
-                        entry["name"] = func["name"]
-                    if func.get("arguments") is not None:
-                        entry["arguments_parts"].append(func["arguments"])
+
+            if text.startswith("data:"):
+                data_str = text[len("data:"):].strip()
+            else:
+                data_str = text
+
+            if data_str == "[DONE]":
+                break
+
+            try:
+                chunk = json.loads(data_str)
+            except Exception:
+                continue
+            if not isinstance(chunk, dict):
+                continue
+
+            if created_ts is None:
+                try:
+                    created_ts = int(chunk.get("created"))
+                except Exception:
+                    created_ts = None
+
+            choices = chunk.get("choices")
+            usage = chunk.get("usage")
+            if (not choices) and isinstance(usage, dict):
+                usage_obj = usage
+                continue
+
+            if not isinstance(choices, list):
+                continue
+            for choice in choices:
+                if not isinstance(choice, dict):
+                    continue
+                delta = choice.get("delta") or {}
+                if not isinstance(delta, dict):
+                    continue
+                content = delta.get("content")
+                if content is not None:
+                    content_parts.append(str(content))
+                reasoning_content = delta.get("reasoning_content")
+                if reasoning_content is not None:
+                    reasoning_parts.append(str(reasoning_content))
+                tool_calls = delta.get("tool_calls")
+                if isinstance(tool_calls, list):
+                    for tc in tool_calls:
+                        if not isinstance(tc, dict):
+                            continue
+                        idx = tc.get("index", 0)
+                        if idx not in tool_calls_by_index:
+                            tool_calls_by_index[idx] = {"id": None, "name": None, "arguments_parts": []}
+                        entry = tool_calls_by_index[idx]
+                        if tc.get("id"):
+                            entry["id"] = tc["id"]
+                        func = tc.get("function") or {}
+                        if func.get("name"):
+                            entry["name"] = func["name"]
+                        if func.get("arguments") is not None:
+                            entry["arguments_parts"].append(func["arguments"])
 
     prompt_tokens = safe_get(usage_obj, "prompt_tokens", default=None)
     if prompt_tokens is None:
