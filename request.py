@@ -1613,12 +1613,34 @@ def _strip_key_recursive(value, key: str):
     return value
 
 
+def _strip_codex_store_false_reasoning_input_items(payload: dict) -> dict:
+    input_items = payload.get("input")
+    if not isinstance(input_items, list):
+        return payload
+
+    filtered_items = []
+    removed = False
+    for item in input_items:
+        if isinstance(item, dict) and item.get("type") == "reasoning":
+            removed = True
+            continue
+        filtered_items.append(item)
+
+    if removed:
+        payload["input"] = filtered_items
+    return payload
+
+
 def strip_unsupported_codex_payload_fields(payload: dict, *, strip_store: bool = False) -> dict:
     # Codex rejects these fields; drop them on any Codex-bound request.
     payload.pop("max_output_tokens", None)
     payload.pop("response_format", None)
     payload.pop("top_p", None)
     _strip_key_recursive(payload, "cache_control")
+    # ChatGPT Codex upstream requires store=false. Reasoning input items can
+    # carry rs_* ids from previous store=false responses; replaying them makes
+    # upstream try to load non-persisted items and return a terminal 404.
+    _strip_codex_store_false_reasoning_input_items(payload)
     if strip_store:
         payload.pop("store", None)
     return payload
