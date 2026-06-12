@@ -124,6 +124,110 @@ async def _close_async_iterator_safely(iterator: Any, *, label: str) -> bool:
     return await _await_stream_cleanup_safely(aclose(), label=label)
 
 
+async def _call_cleanup_safely(cleanup: Any, *, label: str) -> bool:
+    try:
+        result = cleanup()
+    except BaseException as exc:
+        logger.warning(
+            "%s cleanup failed",
+            label,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        return False
+    return await _await_stream_cleanup_safely(result, label=label)
+
+
+async def _force_release_httpcore_pool_request_safely(stream: Any, *, label: str) -> bool:
+    pool = getattr(stream, "_pool", None)
+    pool_request = getattr(stream, "_pool_request", None)
+    if pool is None or pool_request is None:
+        return True
+
+    requests = getattr(pool, "_requests", None)
+    pool_connections = getattr(pool, "_connections", None)
+    connection = getattr(pool_request, "connection", None)
+    if not isinstance(requests, list):
+        requests = []
+    if pool_request not in requests and connection is None:
+        return True
+
+    try:
+        closing: list[Any] = []
+        lock = getattr(pool, "_optional_thread_lock", None)
+        if lock is not None:
+            with lock:
+                if pool_request in requests:
+                    requests.remove(pool_request)
+                if isinstance(pool_connections, list) and connection in pool_connections:
+                    pool_connections.remove(connection)
+                assign_requests = getattr(pool, "_assign_requests_to_connections", None)
+                closing = list(assign_requests()) if callable(assign_requests) else closing
+        else:
+            if pool_request in requests:
+                requests.remove(pool_request)
+            if isinstance(pool_connections, list) and connection in pool_connections:
+                pool_connections.remove(connection)
+            assign_requests = getattr(pool, "_assign_requests_to_connections", None)
+            closing = list(assign_requests()) if callable(assign_requests) else closing
+
+        if connection is not None and all(candidate is not connection for candidate in closing):
+            closing.append(connection)
+
+        close_connections = getattr(pool, "_close_connections", None)
+        if callable(close_connections):
+            return await _await_stream_cleanup_safely(
+                close_connections(closing),
+                label=label,
+            )
+        cleanup_ok = True
+        for connection_to_close in closing:
+            aclose = getattr(connection_to_close, "aclose", None)
+            if callable(aclose):
+                cleanup_ok = await _call_cleanup_safely(
+                    aclose,
+                    label=f"{label} connection",
+                ) and cleanup_ok
+        return cleanup_ok
+    except BaseException as exc:
+        logger.warning(
+            "%s cleanup failed",
+            label,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        return False
+
+
+async def _force_close_response_httpcore_stream_chain_safely(response: Any | None, *, label: str) -> bool:
+    if response is None:
+        return True
+
+    stream = getattr(response, "stream", None)
+    candidates: list[Any] = []
+    current = stream
+    seen: set[int] = set()
+    while current is not None:
+        current_id = id(current)
+        if current_id in seen:
+            break
+        seen.add(current_id)
+        candidates.append(current)
+        current = getattr(current, "_stream", None)
+
+    cleanup_ok = True
+    for candidate in candidates:
+        aclose = getattr(candidate, "aclose", None)
+        if callable(aclose):
+            cleanup_ok = await _call_cleanup_safely(
+                aclose,
+                label=label,
+            ) and cleanup_ok
+        cleanup_ok = await _force_release_httpcore_pool_request_safely(
+            candidate,
+            label=label,
+        ) and cleanup_ok
+    return cleanup_ok
+
+
 async def _yield_from_stream(stream: AsyncIterator[Any], *, label: str) -> AsyncIterator[Any]:
     try:
         async for chunk in stream:
@@ -1168,159 +1272,169 @@ async def fetch_gpt_response_stream(client, url, headers, payload, timeout):
     has_send_thinking = False
     ark_tag = False
     json_payload = await asyncio.to_thread(json.dumps, payload)
-    async with client.stream('POST', url, headers=headers, content=json_payload, timeout=timeout) as response:
-        error_message = await check_response(response, "fetch_gpt_response_stream")
-        if error_message:
-            yield error_message
-            return
+    response = None
+    completed_normally = False
+    input_tokens = 0
+    output_tokens = 0
+    try:
+        async with client.stream('POST', url, headers=headers, content=json_payload, timeout=timeout) as response:
+            error_message = await check_response(response, "fetch_gpt_response_stream")
+            if error_message:
+                yield error_message
+                return
 
-        if _is_responses_api_call(url, payload):
-            async for chunk in _stream_responses_to_chat_completions(
-                response.aiter_text(),
-                request_model=payload["model"],
-            ):
-                yield chunk
-            return
+            if _is_responses_api_call(url, payload):
+                async for chunk in _stream_responses_to_chat_completions(
+                    response.aiter_text(),
+                    request_model=payload["model"],
+                ):
+                    yield chunk
+                completed_normally = True
+                return
 
-        buffer = ""
-        enter_buffer = ""
+            buffer = ""
+            enter_buffer = ""
 
-        input_tokens = 0
-        output_tokens = 0
-
-        async for chunk in response.aiter_text():
-            buffer += chunk
-            while "\n" in buffer:
-                line, buffer = buffer.split("\n", 1)
-                # logger.info("line: %s", repr(line))
-                if line.startswith(": keepalive"):
-                    yield line + end_of_line
-                    continue
-                if line and not line.startswith(":") and (result:=line.lstrip("data: ").strip()) and not line.startswith("event: "):
-                    if result.strip() == "[DONE]":
-                        break
-                    line = await asyncio.to_thread(json.loads, result)
-                    line['id'] = f"chatcmpl-{random_str}"
-
-                    # v1/responses
-                    if line.get("type") == "response.reasoning_summary_text.delta" and line.get("delta"):
-                        sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=line.get("delta"))
-                        yield sse_string
+            async for chunk in response.aiter_text():
+                buffer += chunk
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    # logger.info("line: %s", repr(line))
+                    if line.startswith(": keepalive"):
+                        yield line + end_of_line
                         continue
-                    elif line.get("type") == "response.reasoning_summary_text.done":
-                        sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content="\n\n")
-                        yield sse_string
-                        continue
-                    elif line.get("type") == "response.output_text.delta" and line.get("delta"):
-                        sse_string = await generate_sse_response(timestamp, payload["model"], content=line.get("delta"))
-                        yield sse_string
-                        continue
-                    elif line.get("type") == "response.output_text.done":
-                        sse_string = await generate_sse_response(timestamp, payload["model"], stop="stop")
-                        yield sse_string
-                        continue
-                    elif line.get("type") == "response.completed":
-                        input_tokens = safe_get(line, "response", "usage", "input_tokens", default=0)
-                        output_tokens = safe_get(line, "response", "usage", "output_tokens", default=0)
-                        continue
-                    elif line.get("type", "").startswith("response."):
-                        continue
+                    if line and not line.startswith(":") and (result:=line.lstrip("data: ").strip()) and not line.startswith("event: "):
+                        if result.strip() == "[DONE]":
+                            completed_normally = True
+                            break
+                        line = await asyncio.to_thread(json.loads, result)
+                        line['id'] = f"chatcmpl-{random_str}"
 
-                    # 处理 <think> 标签
-                    content = safe_get(line, "choices", 0, "delta", "content", default="")
-                    if "<think>" in content:
-                        is_thinking = True
-                        ark_tag = True
-                        content = content.replace("<think>", "")
-                    if "</think>" in content:
-                        end_think_reasoning_content = ""
-                        end_think_content = ""
-                        is_thinking = False
+                        # v1/responses
+                        if line.get("type") == "response.reasoning_summary_text.delta" and line.get("delta"):
+                            sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=line.get("delta"))
+                            yield sse_string
+                            continue
+                        elif line.get("type") == "response.reasoning_summary_text.done":
+                            sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content="\n\n")
+                            yield sse_string
+                            continue
+                        elif line.get("type") == "response.output_text.delta" and line.get("delta"):
+                            sse_string = await generate_sse_response(timestamp, payload["model"], content=line.get("delta"))
+                            yield sse_string
+                            continue
+                        elif line.get("type") == "response.output_text.done":
+                            sse_string = await generate_sse_response(timestamp, payload["model"], stop="stop")
+                            yield sse_string
+                            continue
+                        elif line.get("type") == "response.completed":
+                            input_tokens = safe_get(line, "response", "usage", "input_tokens", default=0)
+                            output_tokens = safe_get(line, "response", "usage", "output_tokens", default=0)
+                            continue
+                        elif line.get("type", "").startswith("response."):
+                            continue
 
-                        if content.rstrip('\n').endswith("</think>"):
-                            end_think_reasoning_content = content.replace("</think>", "").rstrip('\n')
-                        elif content.lstrip('\n').startswith("</think>"):
-                            end_think_content = content.replace("</think>", "").lstrip('\n')
+                        # 处理 <think> 标签
+                        content = safe_get(line, "choices", 0, "delta", "content", default="")
+                        if "<think>" in content:
+                            is_thinking = True
+                            ark_tag = True
+                            content = content.replace("<think>", "")
+                        if "</think>" in content:
+                            end_think_reasoning_content = ""
+                            end_think_content = ""
+                            is_thinking = False
+
+                            if content.rstrip('\n').endswith("</think>"):
+                                end_think_reasoning_content = content.replace("</think>", "").rstrip('\n')
+                            elif content.lstrip('\n').startswith("</think>"):
+                                end_think_content = content.replace("</think>", "").lstrip('\n')
+                            else:
+                                end_think_reasoning_content = content.split("</think>")[0]
+                                end_think_content = content.split("</think>")[1]
+
+                            if end_think_reasoning_content:
+                                sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=end_think_reasoning_content)
+                                yield sse_string
+                            if end_think_content:
+                                sse_string = await generate_sse_response(timestamp, payload["model"], content=end_think_content)
+                                yield sse_string
+                            continue
+                        if is_thinking and ark_tag:
+                            if not has_send_thinking:
+                                content = content.replace("\n\n", "")
+                            if content:
+                                sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=content)
+                                yield sse_string
+                                has_send_thinking = True
+                            continue
+
+                        # 处理 poe thinking 标签
+                        if "Thinking..." in content and "\n> " in content:
+                            is_thinking = True
+                            content = content.replace("Thinking...", "").replace("\n> ", "")
+                        if is_thinking and "\n\n" in content and not ark_tag:
+                            is_thinking = False
+                        if is_thinking and not ark_tag:
+                            content = content.replace("\n> ", "")
+                            if not has_send_thinking:
+                                content = content.replace("\n", "")
+                            if content:
+                                sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=content)
+                                yield sse_string
+                                has_send_thinking = True
+                            continue
+
+                        no_stream_content = safe_get(line, "choices", 0, "message", "content", default=None)
+                        openrouter_reasoning = safe_get(line, "choices", 0, "delta", "reasoning", default="")
+                        openrouter_base64_image = safe_get(line, "choices", 0, "delta", "images", 0, "image_url", "url", default="")
+                        if openrouter_base64_image:
+                            image_data_url = openrouter_base64_image if openrouter_base64_image.startswith("data:") else f"data:image/png;base64,{openrouter_base64_image}"
+                            sse_string = await generate_sse_response(timestamp, payload["model"], content=f"\n![image]({image_data_url})")
+                            yield sse_string
+                            continue
+                        azure_databricks_claude_summary_content = safe_get(line, "choices", 0, "delta", "content", 0, "summary", 0, "text", default="")
+                        azure_databricks_claude_signature_content = safe_get(line, "choices", 0, "delta", "content", 0, "summary", 0, "signature", default="")
+                        # print("openrouter_reasoning", repr(openrouter_reasoning), openrouter_reasoning.endswith("\\\\"), openrouter_reasoning.endswith("\\"))
+                        if azure_databricks_claude_signature_content:
+                            pass
+                        elif azure_databricks_claude_summary_content:
+                            sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=azure_databricks_claude_summary_content)
+                            yield sse_string
+                        elif openrouter_reasoning:
+                            if openrouter_reasoning.endswith("\\"):
+                                enter_buffer += openrouter_reasoning
+                                continue
+                            elif enter_buffer.endswith("\\") and openrouter_reasoning == 'n':
+                                enter_buffer += "n"
+                                continue
+                            elif enter_buffer.endswith("\\n") and openrouter_reasoning == '\\n':
+                                enter_buffer += "\\n"
+                                continue
+                            elif enter_buffer.endswith("\\n\\n"):
+                                openrouter_reasoning = '\n\n' + openrouter_reasoning
+                                enter_buffer = ""
+                            elif enter_buffer:
+                                openrouter_reasoning = enter_buffer + openrouter_reasoning
+                                enter_buffer = ''
+                            openrouter_reasoning = openrouter_reasoning.replace("\\n", "\n")
+
+                            sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=openrouter_reasoning)
+                            yield sse_string
+                        elif no_stream_content and not has_send_thinking:
+                            sse_string = await generate_sse_response(safe_get(line, "created", default=None), safe_get(line, "model", default=None), content=no_stream_content)
+                            yield sse_string
                         else:
-                            end_think_reasoning_content = content.split("</think>")[0]
-                            end_think_content = content.split("</think>")[1]
-
-                        if end_think_reasoning_content:
-                            sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=end_think_reasoning_content)
-                            yield sse_string
-                        if end_think_content:
-                            sse_string = await generate_sse_response(timestamp, payload["model"], content=end_think_content)
-                            yield sse_string
-                        continue
-                    if is_thinking and ark_tag:
-                        if not has_send_thinking:
-                            content = content.replace("\n\n", "")
-                        if content:
-                            sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=content)
-                            yield sse_string
-                            has_send_thinking = True
-                        continue
-
-                    # 处理 poe thinking 标签
-                    if "Thinking..." in content and "\n> " in content:
-                        is_thinking = True
-                        content = content.replace("Thinking...", "").replace("\n> ", "")
-                    if is_thinking and "\n\n" in content and not ark_tag:
-                        is_thinking = False
-                    if is_thinking and not ark_tag:
-                        content = content.replace("\n> ", "")
-                        if not has_send_thinking:
-                            content = content.replace("\n", "")
-                        if content:
-                            sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=content)
-                            yield sse_string
-                            has_send_thinking = True
-                        continue
-
-                    no_stream_content = safe_get(line, "choices", 0, "message", "content", default=None)
-                    openrouter_reasoning = safe_get(line, "choices", 0, "delta", "reasoning", default="")
-                    openrouter_base64_image = safe_get(line, "choices", 0, "delta", "images", 0, "image_url", "url", default="")
-                    if openrouter_base64_image:
-                        image_data_url = openrouter_base64_image if openrouter_base64_image.startswith("data:") else f"data:image/png;base64,{openrouter_base64_image}"
-                        sse_string = await generate_sse_response(timestamp, payload["model"], content=f"\n![image]({image_data_url})")
-                        yield sse_string
-                        continue
-                    azure_databricks_claude_summary_content = safe_get(line, "choices", 0, "delta", "content", 0, "summary", 0, "text", default="")
-                    azure_databricks_claude_signature_content = safe_get(line, "choices", 0, "delta", "content", 0, "summary", 0, "signature", default="")
-                    # print("openrouter_reasoning", repr(openrouter_reasoning), openrouter_reasoning.endswith("\\\\"), openrouter_reasoning.endswith("\\"))
-                    if azure_databricks_claude_signature_content:
-                        pass
-                    elif azure_databricks_claude_summary_content:
-                        sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=azure_databricks_claude_summary_content)
-                        yield sse_string
-                    elif openrouter_reasoning:
-                        if openrouter_reasoning.endswith("\\"):
-                            enter_buffer += openrouter_reasoning
-                            continue
-                        elif enter_buffer.endswith("\\") and openrouter_reasoning == 'n':
-                            enter_buffer += "n"
-                            continue
-                        elif enter_buffer.endswith("\\n") and openrouter_reasoning == '\\n':
-                            enter_buffer += "\\n"
-                            continue
-                        elif enter_buffer.endswith("\\n\\n"):
-                            openrouter_reasoning = '\n\n' + openrouter_reasoning
-                            enter_buffer = ""
-                        elif enter_buffer:
-                            openrouter_reasoning = enter_buffer + openrouter_reasoning
-                            enter_buffer = ''
-                        openrouter_reasoning = openrouter_reasoning.replace("\\n", "\n")
-
-                        sse_string = await generate_sse_response(timestamp, payload["model"], reasoning_content=openrouter_reasoning)
-                        yield sse_string
-                    elif no_stream_content and not has_send_thinking:
-                        sse_string = await generate_sse_response(safe_get(line, "created", default=None), safe_get(line, "model", default=None), content=no_stream_content)
-                        yield sse_string
-                    else:
-                        if no_stream_content:
-                            del line["choices"][0]["message"]
-                        json_line = await asyncio.to_thread(json.dumps, line)
-                        yield "data: " + json_line.strip() + end_of_line
+                            if no_stream_content:
+                                del line["choices"][0]["message"]
+                            json_line = await asyncio.to_thread(json.dumps, line)
+                            yield "data: " + json_line.strip() + end_of_line
+    finally:
+        if response is not None and not completed_normally:
+            await _force_close_response_httpcore_stream_chain_safely(
+                response,
+                label="gpt upstream response stream",
+            )
 
     if input_tokens and output_tokens:
         sse_string = await generate_sse_response(timestamp, payload["model"], None, None, None, None, None, total_tokens=input_tokens + output_tokens, prompt_tokens=input_tokens, completion_tokens=output_tokens)
