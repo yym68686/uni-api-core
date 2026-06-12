@@ -8,6 +8,7 @@ import uuid
 import asyncio
 from datetime import datetime
 from urllib.parse import urlparse
+from typing import Any, AsyncIterator
 
 from .log_config import logger
 
@@ -24,6 +25,112 @@ from .utils import (
     gemini_audio_inline_data_to_wav_base64,
     cache_put_gemini_image_thought_signature,
 )
+
+_BACKGROUND_STREAM_CLEANUP_TASKS: set[asyncio.Task[Any]] = set()
+
+
+def _drain_current_task_cancellation() -> None:
+    current_task = asyncio.current_task()
+    uncancel = getattr(current_task, "uncancel", None)
+    if callable(uncancel):
+        while current_task is not None and current_task.cancelling():
+            uncancel()
+
+
+def _track_background_stream_cleanup_task(task: asyncio.Task[Any], *, label: str) -> None:
+    _BACKGROUND_STREAM_CLEANUP_TASKS.add(task)
+
+    def _cleanup_done(done: asyncio.Task[Any]) -> None:
+        _BACKGROUND_STREAM_CLEANUP_TASKS.discard(done)
+        if done.cancelled():
+            logger.warning("%s cleanup task was cancelled after detach", label)
+            return
+        try:
+            done.result()
+        except BaseException as exc:
+            logger.warning(
+                "%s cleanup failed after detach",
+                label,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+
+    task.add_done_callback(_cleanup_done)
+
+
+async def _await_stream_cleanup_safely(awaitable: Any, *, label: str) -> bool:
+    if awaitable is None or not hasattr(awaitable, "__await__"):
+        return True
+
+    _drain_current_task_cancellation()
+    cleanup_task = asyncio.ensure_future(awaitable)
+    try:
+        await asyncio.shield(cleanup_task)
+        return True
+    except asyncio.CancelledError as exc:
+        logger.warning(
+            "%s cleanup was cancelled; waiting for cleanup to finish",
+            label,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        _drain_current_task_cancellation()
+        try:
+            await asyncio.shield(cleanup_task)
+            return True
+        except asyncio.CancelledError as final_exc:
+            _drain_current_task_cancellation()
+            logger.warning(
+                "%s cleanup was cancelled again; detached cleanup will continue",
+                label,
+                exc_info=(type(final_exc), final_exc, final_exc.__traceback__),
+            )
+            _track_background_stream_cleanup_task(cleanup_task, label=label)
+            return True
+        except GeneratorExit as final_exc:
+            logger.warning(
+                "%s cleanup was interrupted by generator close; detached cleanup will continue",
+                label,
+                exc_info=(type(final_exc), final_exc, final_exc.__traceback__),
+            )
+            _track_background_stream_cleanup_task(cleanup_task, label=label)
+            return True
+        except BaseException as final_exc:
+            logger.warning(
+                "%s cleanup failed after cancellation",
+                label,
+                exc_info=(type(final_exc), final_exc, final_exc.__traceback__),
+            )
+            return False
+    except GeneratorExit as exc:
+        logger.warning(
+            "%s cleanup was interrupted by generator close; detached cleanup will continue",
+            label,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        _track_background_stream_cleanup_task(cleanup_task, label=label)
+        return True
+    except BaseException as exc:
+        logger.warning(
+            "%s cleanup failed",
+            label,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        return False
+
+
+async def _close_async_iterator_safely(iterator: Any, *, label: str) -> bool:
+    aclose = getattr(iterator, "aclose", None)
+    if not callable(aclose):
+        return True
+    return await _await_stream_cleanup_safely(aclose(), label=label)
+
+
+async def _yield_from_stream(stream: AsyncIterator[Any], *, label: str) -> AsyncIterator[Any]:
+    try:
+        async for chunk in stream:
+            yield chunk
+    finally:
+        await _close_async_iterator_safely(stream, label=label)
+
 
 def _normalize_search_item_defaults(item: dict) -> dict:
     normalized = dict(item or {})
@@ -1934,31 +2041,25 @@ async def fetch_dalle_response_stream(client, url, headers, payload, timeout=200
 
 async def fetch_response_stream(client, url, headers, payload, engine, model, timeout=200):
     if engine == "gemini" or engine == "vertex-gemini":
-        async for chunk in fetch_gemini_response_stream(client, url, headers, payload, model, timeout):
-            yield chunk
+        stream = fetch_gemini_response_stream(client, url, headers, payload, model, timeout)
     elif engine == "claude" or engine == "vertex-claude":
-        async for chunk in fetch_claude_response_stream(client, url, headers, payload, model, timeout):
-            yield chunk
+        stream = fetch_claude_response_stream(client, url, headers, payload, model, timeout)
     elif engine == "aws":
-        async for chunk in fetch_aws_response_stream(client, url, headers, payload, model, timeout):
-            yield chunk
+        stream = fetch_aws_response_stream(client, url, headers, payload, model, timeout)
     elif engine in ("gpt", "codex", "openrouter", "azure-databricks"):
-        async for chunk in fetch_gpt_response_stream(client, url, headers, payload, timeout):
-            yield chunk
+        stream = fetch_gpt_response_stream(client, url, headers, payload, timeout)
     elif engine == "azure":
-        async for chunk in fetch_azure_response_stream(client, url, headers, payload, timeout):
-            yield chunk
+        stream = fetch_azure_response_stream(client, url, headers, payload, timeout)
     elif engine == "cloudflare":
-        async for chunk in fetch_cloudflare_response_stream(client, url, headers, payload, model, timeout):
-            yield chunk
+        stream = fetch_cloudflare_response_stream(client, url, headers, payload, model, timeout)
     elif engine == "cohere":
-        async for chunk in fetch_cohere_response_stream(client, url, headers, payload, model, timeout):
-            yield chunk
+        stream = fetch_cohere_response_stream(client, url, headers, payload, model, timeout)
     elif engine == "doubao-translation":
-        async for chunk in fetch_doubao_translation_response_stream(client, url, headers, payload, model, timeout):
-            yield chunk
+        stream = fetch_doubao_translation_response_stream(client, url, headers, payload, model, timeout)
     elif engine == "dalle":
-        async for chunk in fetch_dalle_response_stream(client, url, headers, payload, timeout):
-            yield chunk
+        stream = fetch_dalle_response_stream(client, url, headers, payload, timeout)
     else:
         raise ValueError("Unknown response")
+
+    async for chunk in _yield_from_stream(stream, label=f"{engine} upstream response stream"):
+        yield chunk
